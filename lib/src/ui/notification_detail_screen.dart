@@ -82,7 +82,9 @@ class NotificationDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notification'),
+        // No title: the alert's own subject is the heading, immediately below.
+        // A generic "Notification" label would only repeat what the screen
+        // already makes obvious.
         actions: [
           IconButton(
             icon: const Icon(Icons.copy_all_outlined),

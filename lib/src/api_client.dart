@@ -274,6 +274,21 @@ class ApiClient {
     return DecisionList.fromJson(body);
   }
 
+  /// How many detections each recording holds — only recordings that actually
+  /// fired appear. Cheap enough to call per folder: it reads a cleartext
+  /// surface column and aggregates in SQL, decrypting nothing.
+  Future<Map<String, int>> decisionCounts(String folder) async {
+    final body = await getJson('api/idapi/decision_counts.php', {'folder': folder});
+    final raw = body['counts'];
+    if (raw is! Map) return const {};
+    final out = <String, int>{};
+    raw.forEach((k, v) {
+      final n = v is int ? v : int.tryParse('$v');
+      if (n != null && n > 0) out['$k'] = n;
+    });
+    return out;
+  }
+
   /// The recordings this user has starred in one folder.
   Future<Set<String>> favourites(String folder) async {
     final body = await getJson('api/idapi/favourites_list.php', {'folder': folder});

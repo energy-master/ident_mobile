@@ -25,6 +25,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api_client.dart';
 import '../models.dart';
 import '../providers.dart';
+import '../spectrogram_geometry.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
@@ -244,23 +245,45 @@ class _FileViewerState extends ConsumerState<FileViewer> {
       physics: const NeverScrollableScrollPhysics(),
       onPageChanged: handlePageChanged,
       itemCount: widget.files.length,
-      itemBuilder: (context, i) => Padding(
-        padding: const EdgeInsets.all(8),
-        child: Center(
-          child: InteractiveViewer(
-            maxScale: 6,
-            child: _Spectrogram(
-              url: client?.thumbUrl(widget.folder, widget.files[i]).toString(),
-              headers: client?.imageHeaders ?? const {},
+      itemBuilder: (context, i) {
+        final folderMeta = ref.watch(streamFolderProvider(widget.folder));
+        // Only the active page draws detections. PageView builds its
+        // neighbours too, and fetching their decisions would triple the
+        // requests for pages the user may never stop on.
+        final decisions = i == _index
+            ? (ref
+                    .watch(fileDecisionsProvider(
+                        (folder: widget.folder, file: widget.files[i].name)))
+                    .valueOrNull
+                    ?.decisions ??
+                const <Decision>[])
+            : const <Decision>[];
+
+        return Padding(
+          padding: const EdgeInsets.all(8),
+          child: Center(
+            child: InteractiveViewer(
+              maxScale: 6,
+              child: _Spectrogram(
+                url: client?.thumbUrl(widget.folder, widget.files[i]).toString(),
+                headers: client?.imageHeaders ?? const {},
+                decisions: decisions,
+                durationMs: folderMeta?.durationMs,
+                sampleRate: folderMeta?.sampleRate,
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   Widget _buildStrip(Set<String> favourites, {required bool vertical}) {
     final client = ref.watch(apiClientProvider);
+    // One aggregated call for the whole folder — a request per thumbnail would
+    // be absurd for a decoration on a scrolling strip.
+    final counts =
+        ref.watch(decisionCountsProvider(widget.folder)).valueOrNull ?? const <String, int>{};
 
     return Container(
       decoration: BoxDecoration(
@@ -286,6 +309,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
             file: f,
             active: i == _index,
             favourite: favourites.contains(f.name),
+            hasDecisions: (counts[f.name] ?? 0) > 0,
             url: client?.thumbUrl(widget.folder, f).toString(),
             headers: client?.imageHeaders ?? const {},
             onTap: () => handleStripTap(i),
@@ -372,12 +396,21 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The spectrogram, at its rendered aspect (200x64).
+/// The spectrogram, at its rendered aspect (200x64), with detections drawn over it.
 class _Spectrogram extends StatelessWidget {
-  const _Spectrogram({required this.url, required this.headers});
+  const _Spectrogram({
+    required this.url,
+    required this.headers,
+    this.decisions = const [],
+    this.durationMs,
+    this.sampleRate,
+  });
 
   final String? url;
   final Map<String, String> headers;
+  final List<Decision> decisions;
+  final int? durationMs;
+  final int? sampleRate;
 
   @override
   Widget build(BuildContext context) {
@@ -387,24 +420,99 @@ class _Spectrogram extends StatelessWidget {
       aspectRatio: 200 / 64,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(6),
-        child: CachedNetworkImage(
-          imageUrl: url!,
-          httpHeaders: headers,
-          fit: BoxFit.contain,
-          placeholder: (_, _) => const Center(
-            child: SizedBox(
-              height: 22,
-              width: 22,
-              child: CircularProgressIndicator(strokeWidth: 2),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CachedNetworkImage(
+              imageUrl: url!,
+              httpHeaders: headers,
+              fit: BoxFit.fill,
+              placeholder: (_, _) => const Center(
+                child: SizedBox(
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (_, _, _) => const _Unavailable(
+                message: 'This recording has no rendered spectrogram yet.',
+              ),
             ),
-          ),
-          errorWidget: (_, _, _) => const _Unavailable(
-            message: 'This recording has no rendered spectrogram yet.',
-          ),
+            if (decisions.isNotEmpty && durationMs != null && durationMs! > 0)
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: _DecisionOverlay(
+                    decisions: decisions,
+                    durationSeconds: durationMs! / 1000,
+                    sampleRate: sampleRate,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
   }
+}
+
+/// Draws each detection as a box over the spectrogram.
+///
+/// The axis mapping lives in spectrogram_geometry.dart, where it is unit
+/// tested — an inverted frequency axis would draw every box in the wrong half
+/// of the image while still looking entirely plausible.
+class _DecisionOverlay extends CustomPainter {
+  const _DecisionOverlay({
+    required this.decisions,
+    required this.durationSeconds,
+    required this.sampleRate,
+  });
+
+  final List<Decision> decisions;
+  final double durationSeconds;
+  final int? sampleRate;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Red reads clearly against viridis, which runs blue → green → yellow and
+    // contains no red anywhere.
+    final fill = Paint()
+      ..color = const Color(0x33FF3B30)
+      ..style = PaintingStyle.fill;
+    final stroke = Paint()
+      ..color = const Color(0xE6FF3B30)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+
+    for (final d in decisions) {
+      final box = spectrogramBoxFor(
+        d,
+        durationSeconds: durationSeconds,
+        sampleRate: sampleRate,
+      );
+      if (box == null) continue;
+
+      final rect = Rect.fromLTRB(
+        box.left * size.width,
+        box.top * size.height,
+        box.right * size.width,
+        box.bottom * size.height,
+      );
+
+      // A very short detection would otherwise render as an invisible hairline.
+      final visible = rect.width < 2
+          ? Rect.fromLTRB(rect.left - 1, rect.top, rect.left + 1, rect.bottom)
+          : rect;
+
+      canvas.drawRect(visible, fill);
+      canvas.drawRect(visible, stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DecisionOverlay old) =>
+      old.decisions != decisions ||
+      old.durationSeconds != durationSeconds ||
+      old.sampleRate != sampleRate;
 }
 
 class _Unavailable extends StatelessWidget {
@@ -441,6 +549,7 @@ class _StripItem extends StatelessWidget {
     required this.file,
     required this.active,
     required this.favourite,
+    required this.hasDecisions,
     required this.url,
     required this.headers,
     required this.onTap,
@@ -449,6 +558,7 @@ class _StripItem extends StatelessWidget {
   final StreamFile file;
   final bool active;
   final bool favourite;
+  final bool hasDecisions;
   final String? url;
   final Map<String, String> headers;
   final VoidCallback onTap;
@@ -469,18 +579,39 @@ class _StripItem extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: url == null
-                    ? const ColoredBox(color: Color(0xFF11151D))
-                    : CachedNetworkImage(
-                        imageUrl: url!,
-                        httpHeaders: headers,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        placeholder: (_, _) => const ColoredBox(color: Color(0xFF11151D)),
-                        errorWidget: (_, _, _) => const ColoredBox(color: Color(0xFF11151D)),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: url == null
+                        ? const ColoredBox(color: Color(0xFF11151D))
+                        : CachedNetworkImage(
+                            imageUrl: url!,
+                            httpHeaders: headers,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: (_, _) => const ColoredBox(color: Color(0xFF11151D)),
+                            errorWidget: (_, _, _) => const ColoredBox(color: Color(0xFF11151D)),
+                          ),
+                  ),
+                  // Marks a recording that fired, so detections are findable
+                  // while scrubbing without opening each one.
+                  if (hasDecisions)
+                    Positioned(
+                      top: 3,
+                      right: 3,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B30),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0x99000000), width: 0.5),
+                        ),
                       ),
+                    ),
+                ],
               ),
             ),
             Padding(

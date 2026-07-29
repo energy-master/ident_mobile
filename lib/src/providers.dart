@@ -95,6 +95,12 @@ final streamFolderProvider =
   return null;
 });
 
+/// Detection count per recording, for marking the thumbnail strip.
+final decisionCountsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, folder) {
+  return _guard(ref, (c) => c.decisionCounts(folder));
+});
+
 /// Detections across a whole stream — the decisions data window.
 final streamDecisionsProvider =
     FutureProvider.autoDispose.family<DecisionList, String>((ref, folder) {

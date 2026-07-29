@@ -8,6 +8,7 @@
 ///   Live        every recording, pinned to the newest — and it re-pins on its
 ///               own as new recordings arrive.
 ///   All         every recording, starting at the newest, then free to browse.
+///   Active      only recordings a model actually fired on.
 ///   Favourites  only starred recordings.
 ///
 /// Nothing is decoded on the handset: the images are the PNG snapshots the
@@ -25,7 +26,7 @@ import '../providers.dart';
 import '../theme.dart';
 import 'file_viewer.dart';
 
-enum FeedMode { live, all, favourites }
+enum FeedMode { live, all, active, favourites }
 
 /// How often the live view looks for new recordings. The acoustic feed drops a
 /// file every ~15 min, so this is unhurried on purpose — it exists to catch new
@@ -80,19 +81,19 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
   Widget build(BuildContext context) {
     final async = ref.watch(streamFilesProvider(widget.stream));
     final favourites = ref.watch(favouritesProvider(widget.stream)).valueOrNull ?? const <String>{};
+    final counts = ref.watch(decisionCountsProvider(widget.stream)).valueOrNull ?? const <String, int>{};
 
     return Column(
       children: [
         _ModeSelector(
           mode: _mode,
-          favouriteCount: favourites.length,
           onChanged: handleModeChanged,
           onRefresh: handleRefresh,
         ),
         Expanded(
           child: switch (async) {
             AsyncData(:final value) when value.isEmpty => const _Empty(),
-            AsyncData(:final value) => _buildViewer(value, favourites),
+            AsyncData(:final value) => _buildViewer(value, favourites, counts),
             AsyncError(:final error) => _Error(message: '$error', onRetry: handleRefresh),
             _ => const Center(child: CircularProgressIndicator()),
           },
@@ -101,14 +102,22 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
     );
   }
 
-  Widget _buildViewer(List<StreamFile> all, Set<String> favourites) {
-    final files = _mode == FeedMode.favourites
-        ? all.where((f) => favourites.contains(f.name)).toList(growable: false)
-        : all;
+  Widget _buildViewer(
+    List<StreamFile> all,
+    Set<String> favourites,
+    Map<String, int> counts,
+  ) {
+    final files = switch (_mode) {
+      FeedMode.favourites =>
+        all.where((f) => favourites.contains(f.name)).toList(growable: false),
+      FeedMode.active =>
+        all.where((f) => (counts[f.name] ?? 0) > 0).toList(growable: false),
+      _ => all,
+    };
 
-    // Starring is not restricted to what is on screen, so an empty favourites
-    // view is a normal state rather than a data problem — say so plainly.
-    if (files.isEmpty) return const _NoFavourites();
+    // Neither filter is restricted to what is on screen, so an empty result is
+    // a normal state rather than a data problem — say which filter emptied it.
+    if (files.isEmpty) return _FilterEmpty(mode: _mode);
 
     // The key decides when the viewer restarts at the newest recording.
     //
@@ -119,6 +128,7 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
     final key = switch (_mode) {
       FeedMode.live => ValueKey('live-${files.first.name}'),
       FeedMode.all => const ValueKey('all'),
+      FeedMode.active => const ValueKey('active'),
       FeedMode.favourites => const ValueKey('favourites'),
     };
 
@@ -131,58 +141,63 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
   }
 }
 
+/// Icons only, so four filters cost one compact row rather than a band of text
+/// across the top of a screen whose whole point is the image below it. Each
+/// carries a tooltip, and the icons echo marks used elsewhere: the star matches
+/// the favourite marker, the filled dot matches the red decision dot on the
+/// thumbnail strip.
 class _ModeSelector extends StatelessWidget {
   const _ModeSelector({
     required this.mode,
-    required this.favouriteCount,
     required this.onChanged,
     required this.onRefresh,
   });
 
   final FeedMode mode;
-  final int favouriteCount;
   final ValueChanged<FeedMode> onChanged;
   final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+      padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
       ),
       child: Row(
         children: [
-          Expanded(
-            child: SegmentedButton<FeedMode>(
-              segments: [
-                const ButtonSegment(
-                  value: FeedMode.live,
-                  label: Text('Live'),
-                  icon: Icon(Icons.sensors, size: 15),
-                ),
-                const ButtonSegment(
-                  value: FeedMode.all,
-                  label: Text('All'),
-                  icon: Icon(Icons.view_carousel_outlined, size: 15),
-                ),
-                ButtonSegment(
-                  value: FeedMode.favourites,
-                  label: Text(favouriteCount > 0 ? 'Favourites ($favouriteCount)' : 'Favourites'),
-                  icon: const Icon(Icons.star, size: 15),
-                ),
-              ],
-              selected: {mode},
-              onSelectionChanged: (s) => onChanged(s.first),
-              showSelectedIcon: false,
-              style: ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                textStyle: WidgetStatePropertyAll(
-                  Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
-                ),
+          SegmentedButton<FeedMode>(
+            segments: const [
+              ButtonSegment(
+                value: FeedMode.live,
+                icon: Icon(Icons.sensors, size: 17),
+                tooltip: 'Live — newest recording',
               ),
+              ButtonSegment(
+                value: FeedMode.all,
+                icon: Icon(Icons.view_carousel_outlined, size: 17),
+                tooltip: 'All recordings',
+              ),
+              ButtonSegment(
+                value: FeedMode.active,
+                icon: Icon(Icons.fiber_manual_record, size: 15),
+                tooltip: 'Active — recordings with detections',
+              ),
+              ButtonSegment(
+                value: FeedMode.favourites,
+                icon: Icon(Icons.star, size: 17),
+                tooltip: 'Favourites',
+              ),
+            ],
+            selected: {mode},
+            onSelectionChanged: (s) => onChanged(s.first),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
           ),
+          const Spacer(),
           IconButton(
             icon: const Icon(Icons.refresh),
             iconSize: 20,
@@ -220,23 +235,39 @@ class _Empty extends StatelessWidget {
   }
 }
 
-class _NoFavourites extends StatelessWidget {
-  const _NoFavourites();
+/// Says which filter emptied the view, so it never reads as missing data.
+class _FilterEmpty extends StatelessWidget {
+  const _FilterEmpty({required this.mode});
+
+  final FeedMode mode;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final (icon, message) = switch (mode) {
+      FeedMode.favourites => (
+          Icons.star_border,
+          'No favourites yet.\nTap the star on a recording to keep it here.',
+        ),
+      FeedMode.active => (
+          Icons.fiber_manual_record_outlined,
+          'No recordings have detections yet.\n'
+              'They appear here once a subscribed model fires.',
+        ),
+      _ => (Icons.image_outlined, 'Nothing to show.'),
+    };
+
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.star_border, size: 44, color: IdentColors.idle),
-            SizedBox(height: 14),
+            Icon(icon, size: 44, color: IdentColors.idle),
+            const SizedBox(height: 14),
             Text(
-              'No favourites yet.\nTap the star on a recording to keep it here.',
+              message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: const TextStyle(color: IdentColors.textSecondary),
             ),
           ],
         ),

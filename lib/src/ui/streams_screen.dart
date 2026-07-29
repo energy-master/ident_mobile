@@ -93,8 +93,13 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
   void handleOpenInbox() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => const Scaffold(
-          body: SafeArea(child: NotificationsPage(stream: null, showStreamNames: true)),
+        // Untitled app bar: it exists for the back button, not to announce a
+        // screen whose contents are self-evident.
+        builder: (_) => Scaffold(
+          appBar: AppBar(),
+          body: const SafeArea(
+            child: NotificationsPage(stream: null, showStreamNames: true),
+          ),
         ),
         settings: const RouteSettings(name: 'all-notifications'),
       ),
