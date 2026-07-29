@@ -1,0 +1,228 @@
+/// HTTP client for the IDent Dynamics headless API (`api/idapi/*`).
+///
+/// Every call carries `Authorization: Bearer <token>` — the token minted by
+/// `api/idapi/login.php`. There is no cookie session and no CSRF token: those
+/// gate the web endpoints (`api/*.php`) and would be unusable here, which is
+/// precisely why the idapi surface exists.
+///
+/// The server answers errors as JSON with an `error` key rather than redirecting,
+/// so failures surface as a typed [ApiException] carrying the server's own
+/// `detail` string — which is written for humans and safe to show directly.
+library;
+
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+
+import 'models.dart';
+
+/// A failed API call. [status] is the HTTP code, [error] the server's short
+/// machine key (`unauthorized`, `not_found`, …), [message] its human detail.
+class ApiException implements Exception {
+  const ApiException({
+    required this.status,
+    required this.error,
+    required this.message,
+  });
+
+  final int status;
+  final String error;
+  final String message;
+
+  /// The token is gone or revoked — the app must return to the login screen.
+  bool get isAuthFailure => status == 401;
+
+  /// The account is disabled, unverified, or lacks a grant for this stream.
+  bool get isForbidden => status == 403;
+
+  @override
+  String toString() => message;
+}
+
+/// Thrown when the server cannot be reached at all (no network, bad host, TLS
+/// failure). Kept distinct from [ApiException] so the UI can offer "retry"
+/// rather than "sign in again".
+class NetworkException implements Exception {
+  const NetworkException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class ApiClient {
+  ApiClient({required this.baseUrl, this.token, http.Client? httpClient})
+      : _http = httpClient ?? http.Client();
+
+  /// Site root, e.g. `https://ident.example.com` or `https://host/ident`.
+  /// Stored without a trailing slash so path joining stays predictable.
+  final String baseUrl;
+
+  /// Bearer token, or null before sign-in.
+  final String? token;
+
+  final http.Client _http;
+
+  /// Requests that reach the server but hang are worse than a clean failure —
+  /// the diagnostics call fans out to the Brahma service and can be slow, so this
+  /// is generous rather than tight.
+  static const Duration _timeout = Duration(seconds: 30);
+
+  ApiClient withToken(String? newToken) =>
+      ApiClient(baseUrl: baseUrl, token: newToken, httpClient: _http);
+
+  void close() => _http.close();
+
+  static String normaliseBaseUrl(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return s;
+    if (!s.startsWith('http://') && !s.startsWith('https://')) {
+      s = 'https://$s';
+    }
+    while (s.endsWith('/')) {
+      s = s.substring(0, s.length - 1);
+    }
+    return s;
+  }
+
+  Uri _uri(String path, [Map<String, String>? query]) {
+    final base = Uri.parse(baseUrl);
+    // Preserve any subdirectory in baseUrl (auth.php supports subdir installs),
+    // so `https://host/ident` + `api/idapi/x.php` resolves correctly.
+    final joined = '${base.path}/$path'.replaceAll(RegExp(r'/+'), '/');
+    return base.replace(
+      path: joined,
+      queryParameters: (query == null || query.isEmpty) ? null : query,
+    );
+  }
+
+  Map<String, String> get _headers => {
+        'Accept': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
+
+  /// Headers for an image request — used by the spectrogram tiles, which fetch
+  /// bytes directly rather than through [getJson].
+  Map<String, String> get imageHeaders =>
+      token == null ? const {} : {'Authorization': 'Bearer $token'};
+
+  Future<Map<String, dynamic>> _send(Future<http.Response> Function() run) async {
+    late final http.Response res;
+    try {
+      res = await run().timeout(_timeout);
+    } on TimeoutException {
+      throw const NetworkException('The server took too long to respond.');
+    } catch (e) {
+      throw NetworkException('Could not reach the server. ($e)');
+    }
+
+    Map<String, dynamic> body;
+    try {
+      final decoded = jsonDecode(res.body);
+      body = decoded is Map ? Map<String, dynamic>.from(decoded) : <String, dynamic>{};
+    } on FormatException {
+      // A non-JSON body means we hit something other than the API — most often
+      // an HTML error page from a misconfigured base URL.
+      throw ApiException(
+        status: res.statusCode,
+        error: 'bad_response',
+        message: res.statusCode >= 400
+            ? 'The server returned an error (HTTP ${res.statusCode}).'
+            : 'That address did not return IDent Dynamics API data. Check the server URL.',
+      );
+    }
+
+    if (res.statusCode >= 400 || body['ok'] != true) {
+      throw ApiException(
+        status: res.statusCode,
+        error: (body['error'] ?? 'error').toString(),
+        message: (body['detail'] ?? body['error'] ?? 'Request failed.').toString(),
+      );
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> getJson(String path, [Map<String, String>? query]) =>
+      _send(() => _http.get(_uri(path, query), headers: _headers));
+
+  Future<Map<String, dynamic>> postJson(String path, Map<String, dynamic> body) =>
+      _send(() => _http.post(
+            _uri(path),
+            headers: {..._headers, 'Content-Type': 'application/json'},
+            body: jsonEncode(body),
+          ));
+
+  // ── endpoints ─────────────────────────────────────────────────────────────
+
+  /// Exchange credentials for a bearer token. Returns the raw token and user.
+  Future<({String token, AuthUser user})> login({
+    required String login,
+    required String password,
+    required String device,
+  }) async {
+    final body = await postJson('api/idapi/login.php', {
+      'login': login,
+      'password': password,
+      'device': device,
+    });
+    return (
+      token: (body['token'] ?? '').toString(),
+      user: AuthUser.fromJson(Map<String, dynamic>.from(body['user'] as Map? ?? {})),
+    );
+  }
+
+  /// Revoke this token server-side. Best-effort: the caller clears local state
+  /// regardless, so a user can always sign out even when offline.
+  Future<void> logout() => postJson('api/idapi/logout.php', const {});
+
+  Future<List<StreamFolder>> listStreams() async {
+    final body = await getJson('api/idapi/streams_list.php');
+    return (body['folders'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((f) => StreamFolder.fromJson(Map<String, dynamic>.from(f)))
+        .toList(growable: false);
+  }
+
+  Future<StreamDiagnostics> diagnostics(String stream) async {
+    final body = await getJson('api/idapi/diagnostics.php', {'stream': stream});
+    return StreamDiagnostics.fromJson(body);
+  }
+
+  /// Notifications, newest first. Omit [stream] for every stream (the inbox);
+  /// pass [beforeId] — the lowest id already held — to page backwards.
+  Future<NotificationPage> notifications({
+    String? stream,
+    int limit = 50,
+    int? beforeId,
+  }) async {
+    final body = await getJson('api/idapi/notifications.php', {
+      'stream': ?stream,
+      'limit': '$limit',
+      if (beforeId != null) 'before_id': '$beforeId',
+    });
+    return NotificationPage.fromJson(body);
+  }
+
+  /// Recordings in a stream folder, newest first. Non-audio entries are dropped
+  /// so the images page's time axis only ever contains real recordings.
+  Future<List<StreamFile>> streamFiles(String folder) async {
+    final body = await getJson('api/idapi/stream_files.php', {'folder': folder});
+    final files = (body['files'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((f) => StreamFile.fromJson(Map<String, dynamic>.from(f)))
+        .where((f) => f.isAudio)
+        .toList();
+    files.sort((a, b) => b.modified.compareTo(a.modified));
+    return files;
+  }
+
+  /// URL of one recording's rendered spectrogram snapshot. `v` keys the client
+  /// cache on the recording's mtime, which is what lets the response be
+  /// immutable — a re-recorded file gets a different URL.
+  Uri thumbUrl(String folder, StreamFile file) => _uri('api/idapi/stream_thumb.php', {
+        'folder': folder,
+        'file': file.thumbName,
+        'v': '${file.modified}',
+      });
+}

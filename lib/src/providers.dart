@@ -1,0 +1,140 @@
+/// The Riverpod graph.
+///
+/// One rule runs through all of it: any 401 from the API means the token is
+/// dead, and the only correct response is to tear down the session and return
+/// to sign-in. [_guard] centralises that so no individual screen has to
+/// remember it, and no screen ever renders a "not authorised" error state that
+/// the user cannot act on.
+library;
+
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'api_client.dart';
+import 'auth.dart';
+import 'models.dart';
+
+final authControllerProvider = ChangeNotifierProvider<AuthController>((ref) {
+  return AuthController();
+});
+
+/// The authenticated client, or null when signed out.
+final apiClientProvider = Provider<ApiClient?>((ref) {
+  final auth = ref.watch(authControllerProvider);
+  return auth.state is AuthSignedIn ? auth.client : null;
+});
+
+/// Run an API call, converting a 401 into a session teardown.
+///
+/// Rethrows either way: the caller still needs to fail, but by the time the
+/// error surfaces the app is already routing back to the login screen.
+Future<T> _guard<T>(Ref ref, Future<T> Function(ApiClient) body) async {
+  final client = ref.read(apiClientProvider);
+  if (client == null) {
+    throw const ApiException(
+      status: 401,
+      error: 'unauthorized',
+      message: 'Signed out.',
+    );
+  }
+  try {
+    return await body(client);
+  } on ApiException catch (e) {
+    if (e.isAuthFailure) {
+      await ref.read(authControllerProvider).handleAuthFailure();
+    }
+    rethrow;
+  }
+}
+
+/// Every stream the signed-in user may read.
+final streamsProvider = FutureProvider.autoDispose<List<StreamFolder>>((ref) {
+  return _guard(ref, (c) => c.listStreams());
+});
+
+/// Health checks for one stream. Held for two minutes after the last listener
+/// goes away, so opening a stream's dashboard and coming back does not re-fetch
+/// what the list already has — but a stream the user has stopped looking at
+/// still lets go rather than pinning its result for the session.
+final diagnosticsProvider =
+    FutureProvider.autoDispose.family<StreamDiagnostics, String>((ref, stream) {
+  final link = ref.keepAlive();
+  final expiry = Timer(const Duration(minutes: 2), link.close);
+  ref.onDispose(expiry.cancel);
+  return _guard(ref, (c) => c.diagnostics(stream));
+});
+
+/// Recordings in a stream folder — the time axis for the images page.
+final streamFilesProvider =
+    FutureProvider.autoDispose.family<List<StreamFile>, String>((ref, folder) {
+  return _guard(ref, (c) => c.streamFiles(folder));
+});
+
+/// Paged notification list for one stream (or all streams when [stream] is null).
+///
+/// A [StateNotifier] rather than a FutureProvider because the list grows by
+/// keyset paging as the user scrolls, and appending to what is already on
+/// screen must not re-fetch or reorder the pages above it.
+class NotificationsNotifier extends StateNotifier<AsyncValue<List<NotificationItem>>> {
+  NotificationsNotifier(this._ref, this._stream) : super(const AsyncValue.loading()) {
+    refresh();
+  }
+
+  final Ref _ref;
+  final String? _stream;
+
+  static const _pageSize = 50;
+
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
+  bool get hasMore => _hasMore;
+  bool get isLoadingMore => _loadingMore;
+
+  Future<void> refresh() async {
+    try {
+      final page = await _guard(
+        _ref,
+        (c) => c.notifications(stream: _stream, limit: _pageSize),
+      );
+      _hasMore = page.hasMore;
+      if (mounted) state = AsyncValue.data(page.items);
+    } catch (e, st) {
+      if (mounted) state = AsyncValue.error(e, st);
+    }
+  }
+
+  /// Fetch the next page using the oldest id we hold as the cursor. Keyset
+  /// paging means alerts arriving mid-scroll cannot shift rows between pages.
+  Future<void> loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+    final current = state.valueOrNull;
+    if (current == null || current.isEmpty) return;
+
+    _loadingMore = true;
+    try {
+      final page = await _guard(
+        _ref,
+        (c) => c.notifications(
+          stream: _stream,
+          limit: _pageSize,
+          beforeId: current.last.id,
+        ),
+      );
+      _hasMore = page.hasMore;
+      if (mounted) state = AsyncValue.data([...current, ...page.items]);
+    } catch (_) {
+      // Keep what is already on screen; the user can pull to refresh. Failing
+      // a page-append must not blank a list the user is reading.
+      _hasMore = false;
+    } finally {
+      _loadingMore = false;
+    }
+  }
+}
+
+final notificationsProvider = StateNotifierProvider.autoDispose
+    .family<NotificationsNotifier, AsyncValue<List<NotificationItem>>, String?>(
+  (ref, stream) => NotificationsNotifier(ref, stream),
+);
