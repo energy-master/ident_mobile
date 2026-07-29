@@ -1,15 +1,17 @@
-/// One recording, in full.
+/// The recording viewer — the live feed itself, and the target of a
+/// notification's "Open recording".
 ///
-/// Opened by tapping a lane in the live feed, or from a notification that names
-/// its recording. Shows the file's time span, its spectrogram at the largest
-/// size the screen allows, a strip for moving between recordings, a favourite
-/// star, and the detections recorded against it.
+/// Shows one recording at a time: its time span, its spectrogram at the largest
+/// size the screen allows, a thumbnail strip for moving between recordings, a
+/// favourite star, and the detections recorded against it. There is deliberately
+/// no intermediate list of files — the strip *is* the list, always in view, so
+/// reaching a recording never costs a screen transition.
 ///
 /// Orientation is never forced. The spectrogram keeps its natural wide aspect
 /// either way; what changes is where the strip lives — along the bottom in
 /// portrait, down the side in landscape, where vertical space is the scarce
-/// resource. Taking over the device rotation to "help" would be a worse trade
-/// than letting the layout adapt to however the user is holding it.
+/// resource. Taking over device rotation to "help" would be a worse trade than
+/// letting the layout adapt to however the user is holding it.
 library;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -22,37 +24,51 @@ import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
-class FileViewerScreen extends ConsumerStatefulWidget {
-  const FileViewerScreen({
+/// Embeddable viewer. Hosts its own header, so it works both inside a tab (the
+/// live feed) and inside a Scaffold (opened from a notification).
+class FileViewer extends ConsumerStatefulWidget {
+  const FileViewer({
     super.key,
     required this.folder,
     required this.files,
-    required this.initialIndex,
+    this.initialIndex = 0,
   });
 
   final String folder;
 
-  /// The full ordered list, so the strip can move between recordings without
-  /// another request. Newest first, matching the feed.
+  /// Ordered newest-first. The strip moves between these without re-fetching.
   final List<StreamFile> files;
 
   final int initialIndex;
 
   @override
-  ConsumerState<FileViewerScreen> createState() => _FileViewerScreenState();
+  ConsumerState<FileViewer> createState() => _FileViewerState();
 }
 
-class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
-  late final PageController _pages = PageController(initialPage: widget.initialIndex);
-  late final ScrollController _strip = ScrollController();
-  late int _index = widget.initialIndex;
+class _FileViewerState extends ConsumerState<FileViewer> {
+  late final PageController _pages = PageController(initialPage: _startIndex);
+  final ScrollController _strip = ScrollController();
+  late int _index = _startIndex;
 
   bool _showDecisions = false;
 
-  /// Fixed extent per strip item, so scrolling the strip to a given index is
-  /// arithmetic rather than a measured guess.
+  /// Fixed extent per strip item, so centring the active one is arithmetic
+  /// rather than a measured guess.
   static const double _stripItemExtent = 76;
   static const double _stripThickness = 74;
+
+  int get _lastIndex => widget.files.isEmpty ? 0 : widget.files.length - 1;
+  int get _startIndex => widget.initialIndex.clamp(0, _lastIndex);
+
+  StreamFile get _file => widget.files[_index.clamp(0, _lastIndex)];
+
+  @override
+  void initState() {
+    super.initState();
+    // Centre the strip on the opening recording once the first frame has laid
+    // it out — before that the controller has no viewport to measure against.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _centreStrip(_index, animate: false));
+  }
 
   @override
   void dispose() {
@@ -60,8 +76,6 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     _strip.dispose();
     super.dispose();
   }
-
-  StreamFile get _file => widget.files[_index];
 
   void handlePageChanged(int i) {
     setState(() => _index = i);
@@ -76,117 +90,143 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
     );
   }
 
-  /// Keep the active thumbnail roughly centred as the user pages through.
-  void _centreStrip(int i) {
+  void _centreStrip(int i, {bool animate = true}) {
     if (!_strip.hasClients) return;
     final viewport = _strip.position.viewportDimension;
     final target = (i * _stripItemExtent) - (viewport / 2) + (_stripItemExtent / 2);
-    _strip.animateTo(
-      target.clamp(_strip.position.minScrollExtent, _strip.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-    );
+    final clamped =
+        target.clamp(_strip.position.minScrollExtent, _strip.position.maxScrollExtent);
+    if (animate) {
+      _strip.animateTo(clamped,
+          duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic);
+    } else {
+      _strip.jumpTo(clamped);
+    }
   }
 
   Future<void> handleToggleFavourite() async {
     try {
       await ref.read(favouritesProvider(widget.folder).notifier).toggle(_file.name);
     } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not update favourite: ${e.message}')),
-        );
-      }
+      _snack('Could not update favourite: ${e.message}');
     } on NetworkException {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Offline — favourite not saved.')),
-        );
+      _snack('Offline — favourite not saved.');
+    }
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// Pick a date and time, then land on the recording closest to it.
+  ///
+  /// "Closest" rather than "at or before" because a stream can have gaps; an
+  /// exact-match rule would leave the user staring at nothing when the nearest
+  /// recording is a few minutes the wrong side of their choice.
+  Future<void> handleSearch() async {
+    final files = widget.files;
+    if (files.isEmpty) return;
+
+    final newest = files.first.startTime;
+    final oldest = files.last.startTime;
+
+    final date = await showDatePicker(
+      context: context,
+      initialDate: newest.toLocal(),
+      firstDate: oldest.toLocal().subtract(const Duration(days: 1)),
+      lastDate: newest.toLocal().add(const Duration(days: 1)),
+      helpText: 'Jump to date',
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(newest.toLocal()),
+      helpText: 'Jump to time',
+    );
+    if (!mounted) return;
+
+    // Times are chosen in the user's local zone; recordings are stamped UTC.
+    final target = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      time?.hour ?? 0,
+      time?.minute ?? 0,
+    ).toUtc();
+
+    var bestIndex = 0;
+    var bestDelta = const Duration(days: 36500);
+    for (var i = 0; i < files.length; i++) {
+      final delta = files[i].startTime.difference(target).abs();
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIndex = i;
       }
     }
+
+    handleStripTap(bestIndex);
+    _snack('Nearest recording: ${formatUtcStamp(files[bestIndex].startTime)}');
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.files.isEmpty) return const SizedBox.shrink();
+
     final isLandscape = MediaQuery.orientationOf(context) == Orientation.landscape;
-    final favourites = ref.watch(favouritesProvider(widget.folder));
-    final isFavourite = favourites.valueOrNull?.contains(_file.name) ?? false;
+    final favourites =
+        ref.watch(favouritesProvider(widget.folder)).valueOrNull ?? const <String>{};
+    final isFavourite = favourites.contains(_file.name);
 
     final folderMeta = ref.watch(streamFolderProvider(widget.folder));
-    final start = recordingTime(_file.name, _file.modified);
+    final start = _file.startTime;
     final end = folderMeta?.durationMs == null
         ? null
         : start.add(Duration(milliseconds: folderMeta!.durationMs!));
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(formatTimeSpan(start, end), style: const TextStyle(fontSize: 14)),
-            Text(
-              '${formatUtcDateOnly(start)} · ${_index + 1} of ${widget.files.length}',
-              style: const TextStyle(fontSize: 11.5, color: IdentColors.textSecondary),
-            ),
-          ],
+    return Column(
+      children: [
+        _Header(
+          span: formatTimeSpan(start, end),
+          subtitle: '${formatUtcDateOnly(start)} · ${_index + 1} of ${widget.files.length}',
+          isFavourite: isFavourite,
+          showDecisions: _showDecisions,
+          onSearch: handleSearch,
+          onToggleFavourite: handleToggleFavourite,
+          onToggleDecisions: () => setState(() => _showDecisions = !_showDecisions),
         ),
-        actions: [
-          IconButton(
-            icon: Icon(isFavourite ? Icons.star : Icons.star_border),
-            color: isFavourite ? IdentColors.warn : null,
-            tooltip: isFavourite ? 'Remove from favourites' : 'Add to favourites',
-            onPressed: handleToggleFavourite,
-          ),
-          IconButton(
-            icon: Icon(_showDecisions ? Icons.list_alt : Icons.list_alt_outlined),
-            color: _showDecisions ? IdentColors.accent : null,
-            tooltip: _showDecisions ? 'Hide detections' : 'Show detections',
-            onPressed: () => setState(() => _showDecisions = !_showDecisions),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: isLandscape ? _buildLandscape() : _buildPortrait(),
-      ),
+        Expanded(
+          child: isLandscape ? _buildLandscape(favourites) : _buildPortrait(favourites),
+        ),
+      ],
     );
   }
 
-  /// Portrait: image above, strip along the bottom, detections beneath.
-  Widget _buildPortrait() {
+  Widget _buildPortrait(Set<String> favourites) {
     return Column(
       children: [
         Expanded(flex: 3, child: _buildPager()),
-        SizedBox(height: _stripThickness, child: _buildStrip(vertical: false)),
+        SizedBox(height: _stripThickness, child: _buildStrip(favourites, vertical: false)),
         if (_showDecisions)
           Expanded(flex: 4, child: _DecisionsPanel(folder: widget.folder, file: _file)),
       ],
     );
   }
 
-  /// Landscape: vertical space is scarce, so the strip moves to the side and
-  /// detections become a side panel rather than stacking below.
-  Widget _buildLandscape() {
+  Widget _buildLandscape(Set<String> favourites) {
     return Row(
       children: [
-        Expanded(
-          flex: 3,
-          child: Column(
-            children: [Expanded(child: _buildPager())],
-          ),
-        ),
+        Expanded(child: _buildPager()),
         if (_showDecisions)
-          SizedBox(
-            width: 300,
-            child: _DecisionsPanel(folder: widget.folder, file: _file),
-          ),
-        SizedBox(width: _stripThickness, child: _buildStrip(vertical: true)),
+          SizedBox(width: 300, child: _DecisionsPanel(folder: widget.folder, file: _file)),
+        SizedBox(width: _stripThickness, child: _buildStrip(favourites, vertical: true)),
       ],
     );
   }
 
-  /// Swiping the image moves between recordings — the same gesture the strip
-  /// performs by tap, so either habit works.
+  /// Swiping the image moves between recordings — the same thing the strip does
+  /// by tap, so either habit works.
   Widget _buildPager() {
     final client = ref.watch(apiClientProvider);
 
@@ -194,27 +234,23 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
       controller: _pages,
       onPageChanged: handlePageChanged,
       itemCount: widget.files.length,
-      itemBuilder: (context, i) {
-        final f = widget.files[i];
-        return Padding(
-          padding: const EdgeInsets.all(8),
-          child: Center(
-            child: InteractiveViewer(
-              maxScale: 6,
-              child: _Spectrogram(
-                url: client?.thumbUrl(widget.folder, f).toString(),
-                headers: client?.imageHeaders ?? const {},
-              ),
+      itemBuilder: (context, i) => Padding(
+        padding: const EdgeInsets.all(8),
+        child: Center(
+          child: InteractiveViewer(
+            maxScale: 6,
+            child: _Spectrogram(
+              url: client?.thumbUrl(widget.folder, widget.files[i]).toString(),
+              headers: client?.imageHeaders ?? const {},
             ),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
-  Widget _buildStrip({required bool vertical}) {
+  Widget _buildStrip(Set<String> favourites, {required bool vertical}) {
     final client = ref.watch(apiClientProvider);
-    final favourites = ref.watch(favouritesProvider(widget.folder)).valueOrNull ?? const <String>{};
 
     return Container(
       decoration: BoxDecoration(
@@ -245,7 +281,83 @@ class _FileViewerScreenState extends ConsumerState<FileViewerScreen> {
   }
 }
 
-/// The spectrogram itself, at its rendered aspect (200x64).
+/// Time span, position, and the viewer's actions.
+class _Header extends StatelessWidget {
+  const _Header({
+    required this.span,
+    required this.subtitle,
+    required this.isFavourite,
+    required this.showDecisions,
+    required this.onSearch,
+    required this.onToggleFavourite,
+    required this.onToggleDecisions,
+  });
+
+  final String span;
+  final String subtitle;
+  final bool isFavourite;
+  final bool showDecisions;
+  final VoidCallback onSearch;
+  final VoidCallback onToggleFavourite;
+  final VoidCallback onToggleDecisions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      decoration: const BoxDecoration(
+        color: IdentColors.surface,
+        border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  span,
+                  style: const TextStyle(
+                    color: IdentColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+                Text(
+                  subtitle,
+                  style: const TextStyle(color: IdentColors.textSecondary, fontSize: 11.5),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.event_outlined),
+            iconSize: 20,
+            tooltip: 'Jump to date and time',
+            onPressed: onSearch,
+          ),
+          IconButton(
+            icon: Icon(isFavourite ? Icons.star : Icons.star_border),
+            iconSize: 20,
+            color: isFavourite ? IdentColors.warn : null,
+            tooltip: isFavourite ? 'Remove from favourites' : 'Add to favourites',
+            onPressed: onToggleFavourite,
+          ),
+          IconButton(
+            icon: const Icon(Icons.list_alt),
+            iconSize: 20,
+            color: showDecisions ? IdentColors.accent : null,
+            tooltip: showDecisions ? 'Hide detections' : 'Show detections',
+            onPressed: onToggleDecisions,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The spectrogram, at its rendered aspect (200x64).
 class _Spectrogram extends StatelessWidget {
   const _Spectrogram({required this.url, required this.headers});
 
@@ -254,9 +366,8 @@ class _Spectrogram extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (url == null) {
-      return const _Unavailable(message: 'Not signed in.');
-    }
+    if (url == null) return const _Unavailable(message: 'Not signed in.');
+
     return AspectRatio(
       aspectRatio: 200 / 64,
       child: ClipRRect(
@@ -309,7 +420,7 @@ class _Unavailable extends StatelessWidget {
 }
 
 /// One thumbnail in the strip. The active one is ringed; a starred one carries
-/// a small marker so favourites are findable while scrubbing.
+/// a marker so favourites stay findable while scrubbing.
 class _StripItem extends StatelessWidget {
   const _StripItem({
     required this.file,
@@ -329,8 +440,6 @@ class _StripItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final t = recordingTime(file.name, file.modified);
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -369,7 +478,7 @@ class _StripItem extends StatelessWidget {
                     const SizedBox(width: 2),
                   ],
                   Text(
-                    formatUtcHhmm(t),
+                    formatUtcHhmm(file.startTime),
                     style: TextStyle(
                       fontSize: 9.5,
                       color: active ? IdentColors.textPrimary : IdentColors.textSecondary,
@@ -468,8 +577,8 @@ class _DecisionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final score = decision.score;
-    // Colour by confidence relative to the model's own threshold when it has
-    // one — an absolute scale would misread models tuned differently.
+    // Judge confidence against the model's own threshold when it has one — an
+    // absolute scale would misread models tuned differently.
     final threshold = decision.threshold;
     final strong = score != null && threshold != null && score >= threshold;
 
@@ -522,6 +631,31 @@ class _DecisionRow extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Full-screen wrapper, used when a notification opens its recording.
+class FileViewerScreen extends StatelessWidget {
+  const FileViewerScreen({
+    super.key,
+    required this.folder,
+    required this.files,
+    required this.initialIndex,
+  });
+
+  final String folder;
+  final List<StreamFile> files;
+  final int initialIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(folder, overflow: TextOverflow.ellipsis)),
+      body: SafeArea(
+        top: false,
+        child: FileViewer(folder: folder, files: files, initialIndex: initialIndex),
       ),
     );
   }

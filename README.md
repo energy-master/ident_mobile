@@ -15,13 +15,17 @@ model editing and the WebGL spectrogram stay in the web app.
    - **Notifications**: detection and AIS-proximity alerts, newest first,
      grouped by day, paged as you scroll. Tap one for a full detail screen; when
      an alert names a single recording, **Open recording** jumps straight to it.
-   - **Live images**: the spectrogram waterfall, one lane per recording, with a
-     scrub rail for sweeping through time, a date/time search that jumps to the
-     nearest recording, and an **All / Favourites** filter.
-4. **File viewer** — tap any lane: the recording's time span in the title, the
-   spectrogram at the largest size the screen allows (pinch to zoom, swipe for
-   the next recording), a thumbnail strip for moving between recordings, a
-   favourite star, and the detections recorded against that file.
+   - **Live images**: opens straight onto the newest recording — there is no
+     intermediate file list, because the thumbnail strip *is* the list and is
+     always in view. Shows the recording's time span, its spectrogram (pinch to
+     zoom, swipe for the next), a favourite star, a date/time search, and the
+     detections recorded against that file.
+
+     A **Live / All / Favourites** selector chooses what the strip holds:
+     *Live* is every recording pinned to the newest, re-pinning by itself as new
+     ones arrive; *All* starts at the newest and then lets you browse freely
+     without a background refresh yanking you away; *Favourites* is the starred
+     ones only.
 
 **One data flow per screen, at every size.** Notifications and the live feed are
 never tiled side by side — each is a distinct thing to read, and splitting the
@@ -122,6 +126,11 @@ server** reveals the field for self-hosted or subdirectory installs (which
 - `parseFileStartTime` mirrors `FILENAME_RE` in `js/decisions.js`, plus a
   tolerant fallback. Recordings whose names carry no timestamp fall back to the
   server's `modified` mtime, so the time axis is never empty.
+- **Order recordings by `StreamFile.startTime`, never by `modified`.** The mtime
+  is when the writer finished or copied the file, so a downloader that
+  backfills or fetches concurrently produces mtimes in a different order from
+  the recordings themselves. Sorting on one key while displaying another is
+  what made the feed look randomly ordered; `models_test.dart` pins this.
 - Only the login screen has been exercised against a live server so far; the
   authenticated screens are verified by static analysis and unit tests, not yet
   by a run against real data.

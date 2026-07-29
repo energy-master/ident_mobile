@@ -6,6 +6,8 @@
 /// halfway through building a list.
 library;
 
+import 'time_format.dart';
+
 /// Traffic-light state for one health check. Mirrors the `status` string the
 /// server sends; anything unrecognised is treated as [warn] so an unknown
 /// verdict is never silently drawn as healthy.
@@ -234,6 +236,16 @@ class StreamFile {
     final n = name.toLowerCase();
     return n.endsWith('.wav') || n.endsWith('.flac') || n.endsWith('.mp3');
   }
+
+  /// When the recording actually began.
+  ///
+  /// The filename wins over `modified`, because the mtime is when the writer
+  /// finished or copied the file — a downloader that backfills, retries, or
+  /// fetches concurrently produces mtimes in a completely different order from
+  /// the recordings themselves. This is the single value used for BOTH ordering
+  /// and display: sorting by mtime while showing filename times is what makes a
+  /// correctly-sorted list look shuffled.
+  DateTime get startTime => recordingTime(name, modified);
 }
 
 /// One detection recorded against a recording.

@@ -14,7 +14,7 @@ import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
-import 'file_viewer_screen.dart';
+import 'file_viewer.dart';
 
 class NotificationDetailScreen extends ConsumerWidget {
   const NotificationDetailScreen({super.key, required this.item});

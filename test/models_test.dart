@@ -243,6 +243,55 @@ void main() {
       expect(audio('notes.txt'), isFalse);
     });
 
+    test('startTime prefers the filename over the mtime', () {
+      // mtime says 1 Jan 2020; the name says 28 Jul 2026. The name wins.
+      final f = StreamFile(name: '_20260728_132408_000.wav', sizeBytes: 0, modified: 1577836800);
+      expect(f.startTime.year, 2026);
+      expect(f.startTime.hour, 13);
+    });
+
+    test('ordering follows recording time, not download order', () {
+      // The exact regression: a downloader fetched these out of order, so mtime
+      // order is scrambled relative to when the recordings were actually made.
+      // Sorting on mtime while displaying filename times made the feed look
+      // random — the sort key must be the key that is shown.
+      final files = [
+        StreamFile(name: '_20260728_130000_000.wav', sizeBytes: 0, modified: 3000), // oldest recording, fetched last
+        StreamFile(name: '_20260728_140000_000.wav', sizeBytes: 0, modified: 1000), // newest recording, fetched first
+        StreamFile(name: '_20260728_133000_000.wav', sizeBytes: 0, modified: 2000),
+      ];
+
+      files.sort((a, b) {
+        final t = b.startTime.compareTo(a.startTime);
+        return t != 0 ? t : b.name.compareTo(a.name);
+      });
+
+      expect(
+        files.map((f) => f.name).toList(),
+        [
+          '_20260728_140000_000.wav',
+          '_20260728_133000_000.wav',
+          '_20260728_130000_000.wav',
+        ],
+        reason: 'newest recording first, regardless of mtime',
+      );
+    });
+
+    test('ordering is total and stable when start times tie', () {
+      // Names with no parseable timestamp fall back to mtime; equal mtimes must
+      // still produce a deterministic order rather than shuffling per refresh.
+      final files = [
+        const StreamFile(name: 'b.wav', sizeBytes: 0, modified: 500),
+        const StreamFile(name: 'a.wav', sizeBytes: 0, modified: 500),
+        const StreamFile(name: 'c.wav', sizeBytes: 0, modified: 500),
+      ];
+      files.sort((a, b) {
+        final t = b.startTime.compareTo(a.startTime);
+        return t != 0 ? t : b.name.compareTo(a.name);
+      });
+      expect(files.map((f) => f.name).toList(), ['c.wav', 'b.wav', 'a.wav']);
+    });
+
     test('parses size and mtime arriving as strings', () {
       final f = StreamFile.fromJson({
         'name': 'a.wav',

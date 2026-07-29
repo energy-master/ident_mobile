@@ -235,7 +235,14 @@ class ApiClient {
         .map((f) => StreamFile.fromJson(Map<String, dynamic>.from(f)))
         .where((f) => f.isAudio)
         .toList();
-    files.sort((a, b) => b.modified.compareTo(a.modified));
+    // Newest first, by when the recording BEGAN — not by mtime. See
+    // StreamFile.startTime: sorting on a different key from the one displayed
+    // is what made the feed look randomly ordered. Ties fall back to the name
+    // so the order is total and stable across refreshes.
+    files.sort((a, b) {
+      final t = b.startTime.compareTo(a.startTime);
+      return t != 0 ? t : b.name.compareTo(a.name);
+    });
     return files;
   }
 
