@@ -209,6 +209,74 @@ void main() {
     });
   });
 
+  group('Vessel', () {
+    test('parses a collapsed track', () {
+      final v = Vessel.fromJson({
+        'mmsi': 316001234,
+        'name': 'SEASPAN',
+        'type': 'cargo',
+        'track': [
+          {'lat': 48.4, 'lng': -123.3, 't': 1000, 't_last': 1000, 'n': 1, 'sog': 8.2},
+          {'lat': 48.5, 'lng': -123.4, 't': 2000, 't_last': 5000, 'n': 4},
+        ],
+      });
+      expect(v.mmsi, 316001234);
+      expect(v.label, 'SEASPAN');
+      expect(v.track, hasLength(2));
+      expect(v.isMoving, isTrue);
+      expect(v.latest!.n, 4);
+      expect(v.latest!.tLast, 5000);
+    });
+
+    test('normalises a snapshot row into a one-point track', () {
+      // Snapshot mode has no `track` — the position is on the row itself. Both
+      // modes must present the same shape or the map has to branch.
+      final v = Vessel.fromJson({
+        'mmsi': 1,
+        'lat': 48.4,
+        'lng': -123.3,
+        'sog': 0.0,
+      });
+      expect(v.track, hasLength(1));
+      expect(v.track.first.lat, 48.4);
+      expect(v.isMoving, isFalse);
+    });
+
+    test('falls back to the MMSI when the vessel has no name', () {
+      expect(Vessel.fromJson({'mmsi': 42, 'track': []}).label, '42');
+      expect(Vessel.fromJson({'mmsi': 42, 'name': '   ', 'track': []}).label, '42');
+    });
+
+    test('a single-point track is not moving', () {
+      final v = Vessel.fromJson({
+        'mmsi': 1,
+        'track': [
+          {'lat': 1, 'lng': 2, 't': 1, 'n': 900},
+        ],
+      });
+      expect(v.isMoving, isFalse);
+    });
+  });
+
+  group('Sensor', () {
+    test('parses a positioned sensor', () {
+      final s = Sensor.fromJson({
+        'name': 'China Creek',
+        'latitude': 48.4284,
+        'longitude': -123.3656,
+        'data_type': 'hydrophone audio',
+        'owner': 'Jane Doe',
+      });
+      expect(s.hasPosition, isTrue);
+      expect(s.latitude, closeTo(48.4284, 1e-9));
+    });
+
+    test('a sensor without coordinates cannot anchor a map', () {
+      final s = Sensor.fromJson({'name': 'Unplaced'});
+      expect(s.hasPosition, isFalse);
+    });
+  });
+
   group('NotificationPage', () {
     test('defaults to an empty page rather than throwing', () {
       final p = NotificationPage.fromJson({'ok': true});

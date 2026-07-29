@@ -83,13 +83,19 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
     final favourites = ref.watch(favouritesProvider(widget.stream)).valueOrNull ?? const <String>{};
     final counts = ref.watch(decisionCountsProvider(widget.stream)).valueOrNull ?? const <String, int>{};
 
+    // Landscape is where the spectrogram earns its space, so the filter row
+    // steps out of the way. The mode still applies — it just isn't adjustable
+    // until the phone comes back to portrait.
+    final isPortrait = MediaQuery.orientationOf(context) == Orientation.portrait;
+
     return Column(
       children: [
-        _ModeSelector(
-          mode: _mode,
-          onChanged: handleModeChanged,
-          onRefresh: handleRefresh,
-        ),
+        if (isPortrait)
+          _ModeSelector(
+            mode: _mode,
+            onChanged: handleModeChanged,
+            onRefresh: handleRefresh,
+          ),
         Expanded(
           child: switch (async) {
             AsyncData(:final value) when value.isEmpty => const _Empty(),

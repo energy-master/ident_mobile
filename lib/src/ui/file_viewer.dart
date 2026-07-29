@@ -70,9 +70,20 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   @override
   void initState() {
     super.initState();
-    // Centre the strip on the opening recording once the first frame has laid
-    // it out — before that the controller has no viewport to measure against.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _centreStrip(_index, animate: false));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Centre the strip on the opening recording once the first frame has laid
+      // it out — before that the controller has no viewport to measure against.
+      _centreStrip(_index, animate: false);
+      _publishActiveFile();
+    });
+  }
+
+  /// Tell sibling windows which recording is selected. The AIS map reads this
+  /// to plot the traffic present while *this* recording was made, so the
+  /// selection has to be visible outside the viewer.
+  void _publishActiveFile() {
+    if (widget.files.isEmpty) return;
+    ref.read(activeFileProvider(widget.folder).notifier).state = _file;
   }
 
   @override
@@ -85,6 +96,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   void handlePageChanged(int i) {
     setState(() => _index = i);
     _centreStrip(i);
+    _publishActiveFile();
   }
 
   void handleStripTap(int i) {

@@ -329,6 +329,138 @@ class DecisionList {
       );
 }
 
+/// One position in a vessel's track.
+///
+/// The server collapses consecutive fixes at the same position into a single
+/// point, so [n] is how many raw fixes were merged and [tLast] when the vessel
+/// was last seen there. A moored vessel therefore appears as one point with a
+/// large [n] rather than thousands of stacked markers.
+class TrackPoint {
+  const TrackPoint({
+    required this.lat,
+    required this.lng,
+    required this.t,
+    this.tLast,
+    this.cog,
+    this.sog,
+    this.n = 1,
+  });
+
+  final double lat;
+  final double lng;
+
+  /// Epoch ms when the vessel arrived at this position.
+  final int t;
+
+  /// Epoch ms when it was last seen here.
+  final int? tLast;
+
+  final double? cog;
+  final double? sog;
+  final int n;
+
+  DateTime get time => DateTime.fromMillisecondsSinceEpoch(t, isUtc: true);
+
+  factory TrackPoint.fromJson(Map<String, dynamic> json) => TrackPoint(
+        lat: _asDouble(json['lat']) ?? 0,
+        lng: _asDouble(json['lng']) ?? 0,
+        t: _asInt(json['t']) ?? 0,
+        tLast: _asInt(json['t_last']),
+        cog: _asDouble(json['cog']),
+        sog: _asDouble(json['sog']),
+        n: _asInt(json['n']) ?? 1,
+      );
+}
+
+/// A vessel near the sensor.
+///
+/// In track mode [track] holds its path through the requested window; in
+/// snapshot mode it holds a single current position.
+class Vessel {
+  const Vessel({
+    required this.mmsi,
+    required this.track,
+    this.name,
+    this.type,
+    this.flag,
+    this.dest,
+  });
+
+  final int mmsi;
+  final List<TrackPoint> track;
+  final String? name;
+  final String? type;
+  final String? flag;
+  final String? dest;
+
+  /// A label worth showing — falls back to the MMSI, which is always present.
+  String get label => (name != null && name!.trim().isNotEmpty) ? name!.trim() : '$mmsi';
+
+  /// Moving vessels are the interesting ones; a single point means it sat still
+  /// for the whole window.
+  bool get isMoving => track.length >= 2;
+
+  TrackPoint? get latest => track.isEmpty ? null : track.last;
+
+  factory Vessel.fromJson(Map<String, dynamic> json) {
+    final rawTrack = json['track'];
+    final track = rawTrack is List
+        ? rawTrack
+            .whereType<Map>()
+            .map((p) => TrackPoint.fromJson(Map<String, dynamic>.from(p)))
+            .toList(growable: false)
+        // Snapshot mode has no `track` — the vessel's position is on the row
+        // itself. Normalising it to a one-point track lets the map treat both
+        // modes identically.
+        : [
+            TrackPoint(
+              lat: _asDouble(json['lat']) ?? 0,
+              lng: _asDouble(json['lng']) ?? 0,
+              t: _asInt(json['t']) ?? 0,
+              cog: _asDouble(json['cog']),
+              sog: _asDouble(json['sog']),
+            ),
+          ];
+
+    return Vessel(
+      mmsi: _asInt(json['mmsi']) ?? 0,
+      track: track,
+      name: (json['name']?.toString().isEmpty ?? true) ? null : json['name'].toString(),
+      type: (json['type']?.toString().isEmpty ?? true) ? null : json['type'].toString(),
+      flag: (json['flag']?.toString().isEmpty ?? true) ? null : json['flag'].toString(),
+      dest: (json['dest']?.toString().isEmpty ?? true) ? null : json['dest'].toString(),
+    );
+  }
+}
+
+/// The sensor registered for a stream — the map's anchor point.
+class Sensor {
+  const Sensor({
+    required this.name,
+    this.latitude,
+    this.longitude,
+    this.dataType,
+    this.owner,
+  });
+
+  final String name;
+  final double? latitude;
+  final double? longitude;
+  final String? dataType;
+  final String? owner;
+
+  /// A sensor with no coordinates can't anchor a map, so callers must check.
+  bool get hasPosition => latitude != null && longitude != null;
+
+  factory Sensor.fromJson(Map<String, dynamic> json) => Sensor(
+        name: (json['name'] ?? '').toString(),
+        latitude: _asDouble(json['latitude']),
+        longitude: _asDouble(json['longitude']),
+        dataType: json['data_type']?.toString(),
+        owner: json['owner']?.toString(),
+      );
+}
+
 /// Company branding inherited from the account lead.
 ///
 /// The logo bytes come from the site's public `/logo.php`, not the token API —

@@ -289,6 +289,32 @@ class ApiClient {
     return out;
   }
 
+  /// Vessels near the sensor between two instants.
+  ///
+  /// Passing the active recording's span is the map's normal use: it answers
+  /// "what was here while this was recorded", which is the only framing in
+  /// which a detection from days ago makes sense. Omit both to get a live
+  /// snapshot instead.
+  Future<List<Vessel>> vessels(String stream, {DateTime? from, DateTime? to}) async {
+    final body = await getJson('api/idapi/ais.php', {
+      'stream': stream,
+      if (from != null) 'from': '${from.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      if (to != null) 'to': '${to.toUtc().millisecondsSinceEpoch ~/ 1000}',
+    });
+    return (body['vessels'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((v) => Vessel.fromJson(Map<String, dynamic>.from(v)))
+        .toList(growable: false);
+  }
+
+  /// The sensor registered for a stream, or null when none is. A null sensor is
+  /// ordinary — plenty of folders have no registered position.
+  Future<Sensor?> sensor(String stream) async {
+    final body = await getJson('api/idapi/sensor.php', {'stream': stream});
+    final s = body['sensor'];
+    return s is Map ? Sensor.fromJson(Map<String, dynamic>.from(s)) : null;
+  }
+
   /// The recordings this user has starred in one folder.
   Future<Set<String>> favourites(String folder) async {
     final body = await getJson('api/idapi/favourites_list.php', {'folder': folder});

@@ -95,6 +95,33 @@ final streamFolderProvider =
   return null;
 });
 
+/// The recording currently selected in a stream's viewer.
+///
+/// Lifted out of the viewer so sibling data windows can follow it — the AIS map
+/// plots the traffic present during *this* recording, which only works if
+/// choosing a file in one window is visible from another. Not autoDispose: it
+/// must survive swiping between windows, and it is keyed by folder so two
+/// streams never share a selection.
+final activeFileProvider =
+    StateProvider.family<StreamFile?, String>((ref, folder) => null);
+
+/// The sensor anchoring a stream's map.
+final sensorProvider =
+    FutureProvider.autoDispose.family<Sensor?, String>((ref, stream) {
+  return _guard(ref, (c) => c.sensor(stream));
+});
+
+/// Vessels present during a given window.
+///
+/// Keyed by the window itself so each recording's traffic is cached separately
+/// and swiping back to an earlier file is instant rather than re-fetched.
+typedef VesselQuery = ({String stream, DateTime? from, DateTime? to});
+
+final vesselsProvider =
+    FutureProvider.autoDispose.family<List<Vessel>, VesselQuery>((ref, q) {
+  return _guard(ref, (c) => c.vessels(q.stream, from: q.from, to: q.to));
+});
+
 /// Detection count per recording, for marking the thumbnail strip.
 final decisionCountsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, folder) {

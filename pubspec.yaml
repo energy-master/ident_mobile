@@ -39,6 +39,8 @@ dependencies:
   flutter_secure_storage: ^10.3.1
   intl: ^0.20.3
   cached_network_image: ^3.4.1
+  flutter_map: ^8.3.1
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:

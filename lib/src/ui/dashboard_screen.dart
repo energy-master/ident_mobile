@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers.dart';
 import '../theme.dart';
+import 'ais_page.dart';
 import 'decisions_page.dart';
 import 'images_page.dart';
 import 'notifications_page.dart';
@@ -36,7 +37,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   final _pages = PageController();
   int _page = 0;
 
-  static const _titles = ['Live images', 'Notifications', 'Decisions'];
+  // AIS sits next to Live images because it reads the recording selected there
+  // — the two are meant to be swiped between.
+  static const _titles = ['Live images', 'AIS', 'Notifications', 'Decisions'];
 
   @override
   void dispose() {
@@ -114,6 +117,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
           onPageChanged: (i) => setState(() => _page = i),
           children: [
             ImagesPage(stream: widget.stream),
+            AisPage(stream: widget.stream),
             NotificationsPage(stream: widget.stream),
             DecisionsPage(stream: widget.stream),
           ],
