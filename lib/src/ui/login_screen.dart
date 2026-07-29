@@ -15,6 +15,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api_client.dart';
 import '../providers.dart';
 import '../theme.dart';
+import 'ident_logo.dart';
 
 /// The hosted install. Overridable in the field below for self-hosted sites.
 const _defaultBaseUrl = 'https://goident.ai';
@@ -127,17 +128,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const Icon(Icons.graphic_eq, size: 56, color: IdentColors.accent),
-                    const SizedBox(height: 16),
-                    Text(
-                      'IDent Dynamics',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: IdentColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
+                    // The real wordmark rather than a generic icon — this is the
+                    // first thing a user sees, so it should be the product's own
+                    // mark, at splash scale.
+                    const Center(child: IdentLogo(scale: 2.4)),
+                    const SizedBox(height: 20),
                     const Text(
                       'Sign in to monitor your streams',
                       textAlign: TextAlign.center,

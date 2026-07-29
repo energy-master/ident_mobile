@@ -24,17 +24,31 @@ import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
-/// Basemap tiles.
+/// Basemap: Esri's world ocean base.
 ///
-/// This mirrors the web app (js/leaflet.js), but note that OpenStreetMap's tile
-/// usage policy discourages distributed apps pointing at their public servers.
-/// Before this ships widely, point [tileUrl] at a keyed provider or a
-/// self-hosted cache — it is deliberately a single constant so that is a
-/// one-line change.
-const tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-const tileAttribution = '© OpenStreetMap contributors';
+/// Chosen over the web app's plain OSM street map because this is a marine
+/// tool: it carries bathymetry, so a vessel track reads against depth and
+/// seabed shape rather than against empty blue. Global coverage, so it works
+/// for Canadian waters where the US-only NOAA chart services do not. Note the
+/// {y}/{x} order — Esri's REST tile path is row-then-column, the reverse of the
+/// usual XYZ convention.
+const oceanTileUrl =
+    'https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}';
 
-/// Identifies this client to the tile server, which OSM's policy requires.
+/// Place and feature labels for the ocean base, as a separate transparent layer.
+const oceanLabelsUrl =
+    'https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}';
+
+/// Seamarks — buoys, lights, channel markers — as a transparent overlay.
+///
+/// Community-run and sparse outside busy waters, so it is layered on top rather
+/// than relied on: where there is nothing to draw the tiles are simply empty.
+const seamarkTileUrl = 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png';
+
+const oceanAttribution = 'Esri, GEBCO, NOAA, National Geographic, and other contributors';
+const seamarkAttribution = '© OpenSeaMap contributors';
+
+/// Identifies this client to the tile servers, which OSM-family policies require.
 const tileUserAgent = 'ai.goident.mobile';
 
 class AisPage extends ConsumerWidget {
@@ -191,8 +205,21 @@ class _MapView extends StatelessWidget {
           ),
           children: [
             TileLayer(
-              urlTemplate: tileUrl,
+              urlTemplate: oceanTileUrl,
               userAgentPackageName: tileUserAgent,
+            ),
+            // Overlay layers: flutter_map 8 paints no background of its own, so
+            // these sit transparently over the basemap.
+            TileLayer(
+              urlTemplate: oceanLabelsUrl,
+              userAgentPackageName: tileUserAgent,
+            ),
+            TileLayer(
+              urlTemplate: seamarkTileUrl,
+              userAgentPackageName: tileUserAgent,
+              // Seamark coverage is patchy; a missing tile is normal and must
+              // not paint an error square over the chart.
+              errorTileCallback: (_, _, _) {},
             ),
             // Tracks under markers, so a dot is never hidden by a line.
             PolylineLayer(
@@ -226,7 +253,10 @@ class _MapView extends StatelessWidget {
               ],
             ),
             const RichAttributionWidget(
-              attributions: [TextSourceAttribution(tileAttribution)],
+              attributions: [
+                TextSourceAttribution(oceanAttribution),
+                TextSourceAttribution(seamarkAttribution),
+              ],
             ),
           ],
         ),

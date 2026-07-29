@@ -527,14 +527,37 @@ class _DecisionOverlay extends CustomPainter {
         box.bottom * size.height,
       );
 
-      // A very short detection would otherwise render as an invisible hairline.
-      final visible = rect.width < 2
-          ? Rect.fromLTRB(rect.left - 1, rect.top, rect.left + 1, rect.bottom)
-          : rect;
-
-      canvas.drawRect(visible, fill);
-      canvas.drawRect(visible, stroke);
+      // Real detections are routinely far smaller than a pixel in BOTH axes —
+      // repmus25 fires 0.085 s events in a 300 s recording across 300 Hz of a
+      // 48 kHz band, which is about 0.3 x 0.6 px. Drawn faithfully that is an
+      // invisible hairline, so both axes get a floor. Clamping only the width
+      // (as this first did) still left them invisible.
+      canvas.drawRect(_atLeast(rect, size), fill);
+      canvas.drawRect(_atLeast(rect, size), stroke);
     }
+  }
+
+  /// Smallest a detection may be drawn, in logical pixels. Below this it stops
+  /// being visible at all; a marker slightly larger than the truth is far more
+  /// useful than an exact rectangle nobody can see.
+  static const _minExtent = 5.0;
+
+  /// Grow [rect] about its centre until it is at least [_minExtent] on each
+  /// axis, then nudge it back inside the image so an edge detection isn't
+  /// half-clipped.
+  Rect _atLeast(Rect rect, Size size) {
+    var out = rect;
+    if (out.width < _minExtent) {
+      final c = out.center.dx;
+      out = Rect.fromLTRB(c - _minExtent / 2, out.top, c + _minExtent / 2, out.bottom);
+    }
+    if (out.height < _minExtent) {
+      final c = out.center.dy;
+      out = Rect.fromLTRB(out.left, c - _minExtent / 2, out.right, c + _minExtent / 2);
+    }
+    final dx = out.left < 0 ? -out.left : (out.right > size.width ? size.width - out.right : 0.0);
+    final dy = out.top < 0 ? -out.top : (out.bottom > size.height ? size.height - out.bottom : 0.0);
+    return out.shift(Offset(dx, dy));
   }
 
   @override
