@@ -196,11 +196,26 @@ class _FileViewerState extends ConsumerState<FileViewer> {
         ref.watch(favouritesProvider(widget.folder)).valueOrNull ?? const <String>{};
     final isFavourite = favourites.contains(_file.name);
 
-    final folderMeta = ref.watch(streamFolderProvider(widget.folder));
+    // Per-file duration, not the folder's: a folder can mix 5-second and
+    // 5-minute recordings, and using the folder figure puts the wrong span in
+    // the header and maps the overlay against the wrong time axis.
+    final durationMs = ref.watch(fileDurationsProvider(widget.folder))[_file.name];
     final start = _file.startTime;
-    final end = folderMeta?.durationMs == null
-        ? null
-        : start.add(Duration(milliseconds: folderMeta!.durationMs!));
+    final end = durationMs == null ? null : start.add(Duration(milliseconds: durationMs));
+
+    // Another window asked to focus a recording — act on it, then clear it.
+    ref.listen(fileFocusRequestProvider(widget.folder), (_, next) {
+      if (next == null) return;
+      final i = widget.files.indexWhere((f) => f.name == next);
+      if (i >= 0) handleStripTap(i);
+      // Clear after this frame; writing to a provider during a listener would
+      // re-enter the build that is currently running.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ref.read(fileFocusRequestProvider(widget.folder).notifier).state = null;
+        }
+      });
+    });
 
     return Column(
       children: [
@@ -258,6 +273,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
       onPageChanged: handlePageChanged,
       itemCount: widget.files.length,
       itemBuilder: (context, i) {
+        final durations = ref.watch(fileDurationsProvider(widget.folder));
         final folderMeta = ref.watch(streamFolderProvider(widget.folder));
         // Only the active page draws detections. PageView builds its
         // neighbours too, and fetching their decisions would triple the
@@ -280,7 +296,8 @@ class _FileViewerState extends ConsumerState<FileViewer> {
                 url: client?.thumbUrl(widget.folder, widget.files[i]).toString(),
                 headers: client?.imageHeaders ?? const {},
                 decisions: decisions,
-                durationMs: folderMeta?.durationMs,
+                // This file's own duration — the overlay's whole time axis.
+                durationMs: durations[widget.files[i].name],
                 sampleRate: folderMeta?.sampleRate,
               ),
             ),

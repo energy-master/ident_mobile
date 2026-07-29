@@ -78,8 +78,25 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     );
   }
 
+  /// The images window, which owns the viewer a focus request targets.
+  static const _imagesPage = 0;
+
   @override
   Widget build(BuildContext context) {
+    // Another window asked to show a recording — slide across to the viewer.
+    // The viewer itself handles scrolling its strip to the file; this only
+    // moves the dashboard, so the two animations run together rather than the
+    // user arriving at an already-settled screen.
+    ref.listen(fileFocusRequestProvider(widget.stream), (_, next) {
+      if (next == null || !_pages.hasClients) return;
+      if (_pages.page?.round() == _imagesPage) return;
+      _pages.animateToPage(
+        _imagesPage,
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutCubic,
+      );
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: Column(

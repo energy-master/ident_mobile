@@ -13,20 +13,24 @@ import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
-import 'file_viewer.dart';
 
 class DecisionsPage extends ConsumerWidget {
   const DecisionsPage({super.key, required this.stream});
 
   final String stream;
 
-  /// Open the recording a detection came from.
+  /// Show the recording a detection came from, in the live viewer.
+  ///
+  /// This raises a focus request rather than pushing a new screen: the viewer
+  /// is already a sibling window, so the dashboard slides across to it and the
+  /// viewer scrolls its strip to the recording. Pushing a second copy of the
+  /// viewer on top would lose the user's place in the strip and leave them a
+  /// back-stack to unwind.
   ///
   /// The live listing is the source of truth for what still exists — a stream
   /// rolls old recordings off, so a detection can outlive its file.
   Future<void> handleOpen(BuildContext context, WidgetRef ref, String fileName) async {
     final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
 
     List<StreamFile> files;
     try {
@@ -36,19 +40,15 @@ class DecisionsPage extends ConsumerWidget {
       return;
     }
 
-    final index = files.indexWhere((f) => f.name == fileName);
-    if (index < 0) {
+    if (!files.any((f) => f.name == fileName)) {
       messenger.showSnackBar(
         const SnackBar(content: Text('That recording is no longer in the stream folder.')),
       );
       return;
     }
 
-    navigator.push(
-      MaterialPageRoute<void>(
-        builder: (_) => FileViewerScreen(folder: stream, files: files, initialIndex: index),
-      ),
-    );
+    // The dashboard listens for this too, and slides to the images window.
+    ref.read(fileFocusRequestProvider(stream).notifier).state = fileName;
   }
 
   @override

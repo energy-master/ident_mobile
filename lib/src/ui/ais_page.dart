@@ -50,11 +50,14 @@ class AisPage extends ConsumerWidget {
       return const _NoActiveFile();
     }
 
-    final folderMeta = ref.watch(streamFolderProvider(stream));
+    // This recording's own duration, not the folder's — folders mix lengths,
+    // and querying AIS over 5 minutes for a 5-second recording would show
+    // traffic that was never there while it was recording.
+    final durationMs = ref.watch(fileDurationsProvider(stream))[active.name];
     final start = active.startTime;
-    final end = folderMeta?.durationMs == null
-        ? start.add(const Duration(minutes: 15))
-        : start.add(Duration(milliseconds: folderMeta!.durationMs!));
+    final end = durationMs != null
+        ? start.add(Duration(milliseconds: durationMs))
+        : start.add(const Duration(minutes: 15));
 
     final sensor = ref.watch(sensorProvider(stream)).valueOrNull;
     final vessels = ref.watch(vesselsProvider((stream: stream, from: start, to: end)));

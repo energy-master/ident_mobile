@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'api_client.dart';
 import 'auth.dart';
+import 'file_duration.dart';
 import 'models.dart';
 
 final authControllerProvider = ChangeNotifierProvider<AuthController>((ref) {
@@ -104,6 +105,31 @@ final streamFolderProvider =
 /// streams never share a selection.
 final activeFileProvider =
     StateProvider.family<StreamFile?, String>((ref, folder) => null);
+
+/// Per-file durations for a folder, keyed by filename.
+///
+/// Folders are not uniform — repmus25 mixes 5-second and 5-minute recordings —
+/// and neither the file listing nor the folder metadata gives a per-file
+/// duration, so this derives one. See file_duration.dart for why proportion to
+/// the modal file size is the right method. Computed once per folder rather
+/// than per file, since the strip and the map both need it for lists of
+/// thousands.
+final fileDurationsProvider =
+    Provider.autoDispose.family<Map<String, int>, String>((ref, folder) {
+  final files = ref.watch(streamFilesProvider(folder)).valueOrNull;
+  if (files == null) return const {};
+  final meta = ref.watch(streamFolderProvider(folder));
+  return estimateDurations(files, folderDurationMs: meta?.durationMs);
+});
+
+/// A request to bring one recording into view in the live viewer.
+///
+/// Kept separate from [activeFileProvider] on purpose: that one is *state* the
+/// viewer writes as the user moves, this one is a *request* other windows write
+/// to move it. Merging them would have the viewer reacting to its own writes.
+/// The viewer clears the request once it has acted on it.
+final fileFocusRequestProvider =
+    StateProvider.family<String?, String>((ref, folder) => null);
 
 /// The sensor anchoring a stream's map.
 final sensorProvider =
