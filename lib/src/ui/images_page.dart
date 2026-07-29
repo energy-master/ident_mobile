@@ -24,6 +24,7 @@ import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
+import 'file_viewer_screen.dart';
 
 /// Height of one lane. Snapshots are rendered 200x64 (js/thumbnail.js), so a
 /// ~3.1:1 image sits inside this with room for the time gutter.
@@ -44,6 +45,11 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
   /// Index under the scrub thumb, or the first visible lane when idle.
   int _cursor = 0;
   bool _scrubbing = false;
+
+  /// Show only starred recordings. Filtering happens on the already-loaded list
+  /// rather than through a second endpoint, so toggling is instant and works
+  /// offline once the feed is loaded.
+  bool _favouritesOnly = false;
 
   @override
   void initState() {
@@ -143,10 +149,11 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(streamFilesProvider(widget.stream));
+    final favourites = ref.watch(favouritesProvider(widget.stream)).valueOrNull ?? const <String>{};
 
     return switch (async) {
       AsyncData(:final value) when value.isEmpty => const _Empty(),
-      AsyncData(:final value) => _buildList(value),
+      AsyncData(:final value) => _buildFiltered(value, favourites),
       AsyncError(:final error) => _Error(
           message: '$error',
           onRetry: () async => ref.invalidate(streamFilesProvider(widget.stream)),
@@ -155,13 +162,69 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
     };
   }
 
-  Widget _buildList(List<StreamFile> files) {
+  Widget _buildFiltered(List<StreamFile> all, Set<String> favourites) {
+    final files = _favouritesOnly
+        ? all.where((f) => favourites.contains(f.name)).toList(growable: false)
+        : all;
+
+    // Starring is not restricted to what is on screen, so the filtered view can
+    // legitimately be empty while the feed is full. Say so rather than showing
+    // the generic "no recordings" state, which would read as a data problem.
+    if (files.isEmpty) {
+      return Column(
+        children: [
+          _FilterBar(
+            favouritesOnly: _favouritesOnly,
+            favouriteCount: favourites.length,
+            totalCount: all.length,
+            onChanged: handleFilterChanged,
+          ),
+          const Expanded(child: _NoFavourites()),
+        ],
+      );
+    }
+
+    return _buildList(files, favourites, all.length, favourites.length);
+  }
+
+  void handleFilterChanged(bool favouritesOnly) {
+    setState(() {
+      _favouritesOnly = favouritesOnly;
+      _cursor = 0;
+    });
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
+  void handleOpenFile(List<StreamFile> files, int index) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => FileViewerScreen(
+          folder: widget.stream,
+          files: files,
+          initialIndex: index,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList(
+    List<StreamFile> files,
+    Set<String> favourites,
+    int totalCount,
+    int favouriteCount,
+  ) {
     final client = ref.watch(apiClientProvider);
     final safeCursor = _cursor.clamp(0, files.length - 1);
     final cursorTime = recordingTime(files[safeCursor].name, files[safeCursor].modified);
 
     return Column(
       children: [
+        _FilterBar(
+          favouritesOnly: _favouritesOnly,
+          favouriteCount: favouriteCount,
+          totalCount: totalCount,
+          onChanged: handleFilterChanged,
+        ),
         _TimeBar(
           time: cursorTime,
           count: files.length,
@@ -175,6 +238,7 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
                 child: RefreshIndicator(
                   onRefresh: () async {
                     ref.invalidate(streamFilesProvider(widget.stream));
+                    ref.read(favouritesProvider(widget.stream).notifier).load();
                     await ref.read(streamFilesProvider(widget.stream).future);
                   },
                   child: ListView.builder(
@@ -187,6 +251,8 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
                       url: client?.thumbUrl(widget.stream, files[i]).toString(),
                       headers: client?.imageHeaders ?? const {},
                       highlighted: i == safeCursor && _scrubbing,
+                      favourite: favourites.contains(files[i].name),
+                      onTap: () => handleOpenFile(files, i),
                     ),
                   ),
                 ),
@@ -273,51 +339,139 @@ class _Lane extends StatelessWidget {
     required this.url,
     required this.headers,
     required this.highlighted,
+    required this.favourite,
+    required this.onTap,
   });
 
   final StreamFile file;
   final String? url;
   final Map<String, String> headers;
   final bool highlighted;
+  final bool favourite;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final t = recordingTime(file.name, file.modified);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      color: highlighted ? IdentColors.accent.withValues(alpha: 0.10) : null,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 52,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  formatUtcShort(t).split(' ').last, // HH:mm
-                  style: const TextStyle(
-                    color: IdentColors.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()],
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        color: highlighted ? IdentColors.accent.withValues(alpha: 0.10) : null,
+        child: Row(
+          children: [
+            SizedBox(
+              width: 54,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      if (favourite) ...[
+                        const Icon(Icons.star, size: 10, color: IdentColors.warn),
+                        const SizedBox(width: 3),
+                      ],
+                      Text(
+                        formatUtcHhmm(t),
+                        style: const TextStyle(
+                          color: IdentColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-                Text(
-                  formatUtcShort(t).split(' ').take(2).join(' '), // dd MMM
-                  style: const TextStyle(color: IdentColors.idle, fontSize: 10.5),
-                ),
-              ],
+                  Text(
+                    formatUtcDateOnly(t),
+                    style: const TextStyle(color: IdentColors.idle, fontSize: 10.5),
+                  ),
+                ],
+              ),
             ),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: _Snapshot(url: url, headers: headers),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// All / favourites switch for the feed.
+class _FilterBar extends StatelessWidget {
+  const _FilterBar({
+    required this.favouritesOnly,
+    required this.favouriteCount,
+    required this.totalCount,
+    required this.onChanged,
+  });
+
+  final bool favouritesOnly;
+  final int favouriteCount;
+  final int totalCount;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
+      ),
+      child: SegmentedButton<bool>(
+        segments: [
+          ButtonSegment(
+            value: false,
+            label: Text('All ($totalCount)'),
+            icon: const Icon(Icons.view_agenda_outlined, size: 16),
           ),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: _Snapshot(url: url, headers: headers),
-            ),
+          ButtonSegment(
+            value: true,
+            label: Text('Favourites ($favouriteCount)'),
+            icon: const Icon(Icons.star, size: 16),
           ),
         ],
+        selected: {favouritesOnly},
+        onSelectionChanged: (s) => onChanged(s.first),
+        showSelectedIcon: false,
+        style: ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          textStyle: WidgetStatePropertyAll(
+            Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12.5),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NoFavourites extends StatelessWidget {
+  const _NoFavourites();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_border, size: 44, color: IdentColors.idle),
+            SizedBox(height: 14),
+            Text(
+              'No favourites yet.\nOpen a recording and tap the star to keep it here.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: IdentColors.textSecondary),
+            ),
+          ],
+        ),
       ),
     );
   }

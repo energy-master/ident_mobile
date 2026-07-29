@@ -176,6 +176,28 @@ class ApiClient {
   /// regardless, so a user can always sign out even when offline.
   Future<void> logout() => postJson('api/idapi/logout.php', const {});
 
+  /// The token owner plus their company branding. Null branding means the
+  /// account has no lead logo and the app shows its own mark alone.
+  Future<({AuthUser user, Branding? branding})> me() async {
+    final body = await getJson('api/idapi/me.php');
+    final b = body['branding'];
+    return (
+      user: AuthUser.fromJson(Map<String, dynamic>.from(body['user'] as Map? ?? {})),
+      branding: b is Map ? Branding.fromJson(Map<String, dynamic>.from(b)) : null,
+    );
+  }
+
+  /// Absolute URL for a site-root-relative path such as a branding logo.
+  /// The logo endpoint is public, so this needs no bearer token.
+  Uri siteUrl(String relativePath) {
+    final base = Uri.parse(baseUrl);
+    final qIndex = relativePath.indexOf('?');
+    final path = qIndex < 0 ? relativePath : relativePath.substring(0, qIndex);
+    final query = qIndex < 0 ? null : relativePath.substring(qIndex + 1);
+    final joined = '${base.path}/$path'.replaceAll(RegExp(r'/+'), '/');
+    return base.replace(path: joined, query: query);
+  }
+
   Future<List<StreamFolder>> listStreams() async {
     final body = await getJson('api/idapi/streams_list.php');
     return (body['folders'] as List<dynamic>? ?? const [])
@@ -225,4 +247,33 @@ class ApiClient {
         'file': file.thumbName,
         'v': '${file.modified}',
       });
+
+  /// Every detection recorded against one recording, in time order.
+  Future<DecisionList> fileDecisions(String folder, String file) async {
+    final body = await getJson('api/idapi/file_decisions.php', {
+      'folder': folder,
+      'file': file,
+    });
+    return DecisionList.fromJson(body);
+  }
+
+  /// The recordings this user has starred in one folder.
+  Future<Set<String>> favourites(String folder) async {
+    final body = await getJson('api/idapi/favourites_list.php', {'folder': folder});
+    return (body['files'] as List<dynamic>? ?? const [])
+        .map((f) => f.toString())
+        .toSet();
+  }
+
+  /// Star or unstar a recording. [favourite] is sent explicitly rather than
+  /// letting the server flip, so a retry after a dropped connection is
+  /// idempotent instead of undoing itself. Returns the state actually stored.
+  Future<bool> setFavourite(String folder, String file, bool favourite) async {
+    final body = await postJson('api/idapi/favourites_toggle.php', {
+      'folder': folder,
+      'file': file,
+      'favourite': favourite,
+    });
+    return body['favourite'] == true;
+  }
 }

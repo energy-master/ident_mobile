@@ -133,6 +133,7 @@ class NotificationItem {
     required this.kind,
     required this.channel,
     required this.success,
+    this.fileName,
     this.sentAtMs,
     this.recipient,
     this.modelId,
@@ -142,6 +143,12 @@ class NotificationItem {
 
   final int id;
   final String streamFolder;
+
+  /// The recording that fired this alert, when there is exactly one. Null for
+  /// hourly digests, which span many recordings — so a client must treat
+  /// "open the recording" as an optional action, not a guaranteed one.
+  final String? fileName;
+
   final String sentAt;
   final int? sentAtMs;
   final String kind;
@@ -152,9 +159,15 @@ class NotificationItem {
   final String? subject;
   final String? detail;
 
+  /// Whether this alert can be traced to a single recording.
+  bool get hasFile => fileName != null && fileName!.isNotEmpty;
+
   factory NotificationItem.fromJson(Map<String, dynamic> json) => NotificationItem(
         id: _asInt(json['id']) ?? 0,
         streamFolder: (json['stream_folder'] ?? '').toString(),
+        fileName: (json['file_name']?.toString().isEmpty ?? true)
+            ? null
+            : json['file_name'].toString(),
         sentAt: (json['sent_at'] ?? '').toString(),
         sentAtMs: _asInt(json['sent_at_ms']),
         kind: (json['kind'] ?? 'detection').toString(),
@@ -221,6 +234,107 @@ class StreamFile {
     final n = name.toLowerCase();
     return n.endsWith('.wav') || n.endsWith('.flac') || n.endsWith('.mp3');
   }
+}
+
+/// One detection recorded against a recording.
+///
+/// `tmin`/`tmax` are seconds from the start of the file, which is what lets the
+/// viewer place a marker along the spectrogram without knowing wall-clock time.
+class Decision {
+  const Decision({
+    required this.modelName,
+    required this.tmin,
+    required this.tmax,
+    required this.source,
+    this.modelId,
+    this.target,
+    this.score,
+    this.fmin,
+    this.fmax,
+    this.threshold,
+  });
+
+  /// Null for a folder sidecar — an off-box detector has no model row.
+  final int? modelId;
+  final String modelName;
+  final String? target;
+  final double tmin;
+  final double tmax;
+  final double? score;
+  final double? fmin;
+  final double? fmax;
+  final double? threshold;
+
+  /// `db` or `sidecar`.
+  final String source;
+
+  double get duration => (tmax - tmin).abs();
+
+  bool get isSidecar => source == 'sidecar';
+
+  factory Decision.fromJson(Map<String, dynamic> json) => Decision(
+        modelId: _asInt(json['model_id']),
+        modelName: (json['model_name'] ?? '').toString(),
+        target: (json['target']?.toString().isEmpty ?? true) ? null : json['target'].toString(),
+        tmin: _asDouble(json['tmin']) ?? 0,
+        tmax: _asDouble(json['tmax']) ?? 0,
+        score: _asDouble(json['score']),
+        fmin: _asDouble(json['fmin']),
+        fmax: _asDouble(json['fmax']),
+        threshold: _asDouble(json['threshold']),
+        source: (json['source'] ?? 'db').toString(),
+      );
+}
+
+/// A file's decision list plus whether the server capped it.
+class DecisionList {
+  const DecisionList({
+    required this.decisions,
+    required this.total,
+    required this.truncated,
+  });
+
+  final List<Decision> decisions;
+  final int total;
+  final bool truncated;
+
+  factory DecisionList.fromJson(Map<String, dynamic> json) => DecisionList(
+        decisions: (json['decisions'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((d) => Decision.fromJson(Map<String, dynamic>.from(d)))
+            .toList(growable: false),
+        total: _asInt(json['n_decisions']) ?? 0,
+        truncated: json['truncated'] == true,
+      );
+}
+
+/// Company branding inherited from the account lead.
+///
+/// The logo bytes come from the site's public `/logo.php`, not the token API —
+/// so this carries only the path to request and a version that rolls whenever
+/// the lead re-uploads, which is what makes the image safely cacheable.
+class Branding {
+  const Branding({
+    required this.companyName,
+    required this.hasLogo,
+    this.logoPath,
+  });
+
+  final String companyName;
+  final bool hasLogo;
+
+  /// Relative to the site root, e.g. `logo.php?id=2&v=…`. Null when no logo.
+  final String? logoPath;
+
+  bool get isEmpty => !hasLogo && companyName.isEmpty;
+
+  factory Branding.fromJson(Map<String, dynamic> json) => Branding(
+        companyName: (json['company_name'] ?? '').toString(),
+        hasLogo: json['has_logo'] == true,
+        logoPath: (json['logo_path']?.toString().isEmpty ?? true)
+            ? null
+            : json['logo_path'].toString(),
+      );
 }
 
 /// The signed-in account.

@@ -124,7 +124,7 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Streams'),
+        title: const _Branding(),
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
@@ -168,6 +168,53 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
           _ => const Center(child: CircularProgressIndicator()),
         },
       ),
+    );
+  }
+}
+
+/// Home-screen title: the account's company logo when the lead has uploaded
+/// one, otherwise just the screen name.
+///
+/// Mirrors the SPA chrome (index.php), which shows the lead logo beside the
+/// IDent dynamics mark. Failure is silent by design — a missing or broken logo
+/// falls back to the plain title rather than showing a broken-image box in the
+/// app bar, because branding is decoration and must never look like an error.
+class _Branding extends ConsumerWidget {
+  const _Branding();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final me = ref.watch(meProvider).valueOrNull;
+    final branding = me?.branding;
+    final client = ref.watch(apiClientProvider);
+
+    const title = Text('Streams');
+
+    if (branding == null || client == null || !branding.hasLogo || branding.logoPath == null) {
+      return title;
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 28, maxWidth: 132),
+          child: Image.network(
+            client.siteUrl(branding.logoPath!).toString(),
+            fit: BoxFit.contain,
+            semanticLabel: branding.companyName.isEmpty
+                ? 'Company logo'
+                : '${branding.companyName} logo',
+            errorBuilder: (_, _, _) => title,
+            loadingBuilder: (context, child, progress) =>
+                progress == null ? child : const SizedBox(width: 60),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(width: 1, height: 18, color: const Color(0x33FFFFFF)),
+        const SizedBox(width: 10),
+        const Text('Streams', style: TextStyle(fontSize: 15)),
+      ],
     );
   }
 }

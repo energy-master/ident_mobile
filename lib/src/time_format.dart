@@ -80,6 +80,38 @@ String formatUtcShort(DateTime t) => _utcShort.format(t.toUtc());
 /// `Tue 28 Jul 2026` — date-separator headers.
 String formatDayLabel(DateTime t) => _dayLabel.format(t.toUtc());
 
+final _timeOnly = DateFormat('HH:mm:ss');
+final _hhmm = DateFormat('HH:mm');
+final _dateOnly = DateFormat('dd MMM');
+
+/// `13:24:08` — the time column in a lane.
+String formatUtcTimeOnly(DateTime t) => _timeOnly.format(t.toUtc());
+
+/// `13:24` — compact time for a dense strip.
+String formatUtcHhmm(DateTime t) => _hhmm.format(t.toUtc());
+
+/// `28 Jul` — the date beneath a lane's time.
+String formatUtcDateOnly(DateTime t) => _dateOnly.format(t.toUtc());
+
+/// Readable length of a recording, e.g. `5 min`, `1 h 30 min`, `45 s`.
+String formatDuration(Duration d) {
+  if (d.inSeconds < 60) return '${d.inSeconds} s';
+  if (d.inMinutes < 60) return '${d.inMinutes} min';
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  return m == 0 ? '$h h' : '$h h $m min';
+}
+
+/// The span a recording covers: `13:24:08 – 13:29:08 UTC · 5 min`.
+///
+/// [end] is null when the folder reports no duration, in which case only the
+/// start is shown rather than inventing an end time.
+String formatTimeSpan(DateTime start, DateTime? end) {
+  final s = formatUtcTimeOnly(start);
+  if (end == null) return '$s UTC';
+  return '$s – ${formatUtcTimeOnly(end)} UTC · ${formatDuration(end.difference(start))}';
+}
+
 /// Humanised age, e.g. `4 min ago`, `2 h ago`, `3 d ago`.
 String formatAge(Duration age) {
   if (age.isNegative) return 'just now';

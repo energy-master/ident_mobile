@@ -48,6 +48,15 @@ Future<T> _guard<T>(Ref ref, Future<T> Function(ApiClient) body) async {
   }
 }
 
+/// The signed-in account plus its company branding.
+///
+/// Fetched rather than read from stored session state so a restored session
+/// picks up a logo the lead changed since last launch. Kept alive for the
+/// session — branding does not move often enough to re-request per screen.
+final meProvider = FutureProvider<({AuthUser user, Branding? branding})>((ref) {
+  return _guard(ref, (c) => c.me());
+});
+
 /// Every stream the signed-in user may read.
 final streamsProvider = FutureProvider.autoDispose<List<StreamFolder>>((ref) {
   return _guard(ref, (c) => c.listStreams());
@@ -70,6 +79,79 @@ final streamFilesProvider =
     FutureProvider.autoDispose.family<List<StreamFile>, String>((ref, folder) {
   return _guard(ref, (c) => c.streamFiles(folder));
 });
+
+/// The folder's own metadata, looked up from the already-loaded stream list.
+///
+/// Recordings are fixed-length chunks, so the folder's `duration_ms` is what
+/// gives the file viewer an end time for its span. Derived from [streamsProvider]
+/// rather than re-fetched, so opening a file costs no extra request.
+final streamFolderProvider =
+    Provider.autoDispose.family<StreamFolder?, String>((ref, folder) {
+  final streams = ref.watch(streamsProvider).valueOrNull;
+  if (streams == null) return null;
+  for (final s in streams) {
+    if (s.name == folder) return s;
+  }
+  return null;
+});
+
+/// Every detection against one recording.
+final fileDecisionsProvider = FutureProvider.autoDispose
+    .family<DecisionList, ({String folder, String file})>((ref, args) {
+  return _guard(ref, (c) => c.fileDecisions(args.folder, args.file));
+});
+
+/// The starred recordings in one folder.
+///
+/// Held as a whole set rather than a flag per file: the feed needs to know the
+/// state of every visible lane at once, and one request per lane would be
+/// absurd. Toggling updates locally first so the star responds instantly, then
+/// reconciles with whatever the server actually stored.
+class FavouritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
+  FavouritesNotifier(this._ref, this._folder) : super(const AsyncValue.loading()) {
+    load();
+  }
+
+  final Ref _ref;
+  final String _folder;
+
+  Future<void> load() async {
+    try {
+      final files = await _guard(_ref, (c) => c.favourites(_folder));
+      if (mounted) state = AsyncValue.data(files);
+    } catch (e, st) {
+      if (mounted) state = AsyncValue.error(e, st);
+    }
+  }
+
+  bool isFavourite(String file) => state.valueOrNull?.contains(file) ?? false;
+
+  /// Returns the state actually stored, or rolls back on failure.
+  Future<bool> toggle(String file) async {
+    final current = state.valueOrNull ?? <String>{};
+    final want = !current.contains(file);
+
+    // Optimistic — a star that lags a network round trip feels broken.
+    state = AsyncValue.data(want ? {...current, file} : (current.toSet()..remove(file)));
+
+    try {
+      final stored = await _guard(_ref, (c) => c.setFavourite(_folder, file, want));
+      if (!mounted) return stored;
+      // Reconcile: another device may have raced us.
+      final now = state.valueOrNull ?? <String>{};
+      state = AsyncValue.data(stored ? {...now, file} : (now.toSet()..remove(file)));
+      return stored;
+    } catch (_) {
+      if (mounted) state = AsyncValue.data(current);   // roll back
+      rethrow;
+    }
+  }
+}
+
+final favouritesProvider = StateNotifierProvider.autoDispose
+    .family<FavouritesNotifier, AsyncValue<Set<String>>, String>(
+  (ref, folder) => FavouritesNotifier(ref, folder),
+);
 
 /// Paged notification list for one stream (or all streams when [stream] is null).
 ///

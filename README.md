@@ -11,15 +11,28 @@ model editing and the WebGL spectrogram stay in the web app.
    glowing status light per health check (acoustic data, model runs, AIS feed).
    Tap a card to open its dashboard; tap **Diagnostics** to expand the detail
    in place.
-3. **Dashboard** (abridged) — two pages:
+3. **Dashboard** (abridged) — two pages, swapped by tabs or swipe:
    - **Notifications**: detection and AIS-proximity alerts, newest first,
-     grouped by day, paged as you scroll. Tap one for a full detail screen.
+     grouped by day, paged as you scroll. Tap one for a full detail screen; when
+     an alert names a single recording, **Open recording** jumps straight to it.
    - **Live images**: the spectrogram waterfall, one lane per recording, with a
-     scrub rail for sweeping through time and a date/time search that jumps to
-     the nearest recording.
+     scrub rail for sweeping through time, a date/time search that jumps to the
+     nearest recording, and an **All / Favourites** filter.
+4. **File viewer** — tap any lane: the recording's time span in the title, the
+   spectrogram at the largest size the screen allows (pinch to zoom, swipe for
+   the next recording), a thumbnail strip for moving between recordings, a
+   favourite star, and the detections recorded against that file.
 
-   On a phone the pages swipe; at ≥720dp (tablets, phones in landscape) both
-   show side by side. Both layouts build the same page widgets.
+**One data flow per screen, at every size.** Notifications and the live feed are
+never tiled side by side — each is a distinct thing to read, and splitting the
+screen halves both without making either easier to follow.
+
+**Orientation is never forced.** The spectrogram keeps its natural wide aspect
+either way; what adapts is the thumbnail strip — along the bottom in portrait,
+down the side in landscape, where vertical space is the scarce resource.
+
+If the account's lead has uploaded a company logo, it appears in the home-screen
+title bar, mirroring the SPA chrome.
 
 Not in v1.0: sensor map, vessel list, live WebGL render.
 
@@ -59,9 +72,20 @@ Added to the `ident_dynamic` repo alongside this app:
 | --- | --- |
 | `api/idapi/login.php` | email/username + password → bearer token. Delegates the credential check to `auth.php`'s `login()`, so IP lockout, the active/verified gates, the audit log and password rehash all still apply. Tears down the cookie session it creates, so the endpoint stays stateless. |
 | `api/idapi/logout.php` | Revokes the calling token. |
+| `api/idapi/me.php` | Token owner + company branding (resolved through `lead_for_user()`). |
 | `api/idapi/diagnostics.php` | Stream health checks. |
-| `api/idapi/notifications.php` | Alerts, optionally scoped to one stream, keyset-paged. |
+| `api/idapi/notifications.php` | Alerts, optionally scoped to one stream, keyset-paged. Carries `file_name` so an alert can be opened to its recording. |
 | `api/idapi/stream_thumb.php` | Spectrogram snapshot PNG. |
+| `api/idapi/file_decisions.php` | Every detection against one recording, with geometry. Merges database rows and folder sidecars. |
+| `api/idapi/favourites_list.php` | Starred recordings in a folder. |
+| `api/idapi/favourites_toggle.php` | Star / unstar one recording. |
+
+Supporting changes in the web repo: `lib/favourites.php` (new
+`ident_user_favourites` table, created lazily), and a `file_name` column on
+`ident_stream_notifications` populated by `scripts/notify_stream_decisions.php`.
+Both are added by the existing `ensure_*_table()` helpers, so **no manual SQL
+migration is required** — they appear on first use. Notifications written before
+the column existed still resolve their recording by parsing `detail`.
 
 Already existed and are reused as-is: `api/idapi/streams_list.php`,
 `api/idapi/stream_files.php`.

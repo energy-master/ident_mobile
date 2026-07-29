@@ -124,6 +124,91 @@ void main() {
     });
   });
 
+  group('NotificationItem file link', () {
+    NotificationItem withFile(Object? fileName) => NotificationItem.fromJson({
+          'id': 1,
+          'stream_folder': 's',
+          'file_name': fileName,
+          'sent_at': '',
+          'kind': 'detection-file',
+          'channel': 'email',
+          'success': true,
+        });
+
+    test('exposes a linked recording', () {
+      final n = withFile('_20260728_132408_000.wav');
+      expect(n.hasFile, isTrue);
+      expect(n.fileName, '_20260728_132408_000.wav');
+    });
+
+    test('treats null and empty alike — an hourly digest links to nothing', () {
+      expect(withFile(null).hasFile, isFalse);
+      expect(withFile('').hasFile, isFalse);
+      // Empty string must normalise to null, or the UI would offer to open a
+      // recording with no name and fail after the user tapped it.
+      expect(withFile('').fileName, isNull);
+    });
+  });
+
+  group('Decision', () {
+    test('parses geometry and computes duration', () {
+      final d = Decision.fromJson({
+        'model_id': 42,
+        'model_name': 'engine-cnn',
+        'target': 'engine',
+        'tmin': 12.5,
+        'tmax': 14.0,
+        'score': 0.91,
+        'threshold': 0.5,
+        'source': 'db',
+      });
+      expect(d.modelId, 42);
+      expect(d.duration, closeTo(1.5, 1e-9));
+      expect(d.isSidecar, isFalse);
+    });
+
+    test('a sidecar decision has no model id', () {
+      final d = Decision.fromJson({
+        'model_id': null,
+        'model_name': 'offbox',
+        'tmin': '3',
+        'tmax': '4',
+        'source': 'sidecar',
+      });
+      expect(d.modelId, isNull);
+      expect(d.isSidecar, isTrue);
+      // Numbers arriving as strings still parse.
+      expect(d.tmin, 3);
+      expect(d.tmax, 4);
+    });
+
+    test('empty target normalises to null', () {
+      final d = Decision.fromJson({'model_name': 'm', 'target': '', 'source': 'db'});
+      expect(d.target, isNull);
+    });
+  });
+
+  group('DecisionList', () {
+    test('reports truncation', () {
+      final l = DecisionList.fromJson({
+        'decisions': [
+          {'model_name': 'm', 'tmin': 1, 'tmax': 2, 'source': 'db'},
+        ],
+        'n_decisions': 900,
+        'truncated': true,
+      });
+      expect(l.decisions, hasLength(1));
+      expect(l.total, 900);
+      expect(l.truncated, isTrue);
+    });
+
+    test('defaults to empty rather than throwing', () {
+      final l = DecisionList.fromJson({'ok': true});
+      expect(l.decisions, isEmpty);
+      expect(l.truncated, isFalse);
+    });
+  });
+
   group('NotificationPage', () {
     test('defaults to an empty page rather than throwing', () {
       final p = NotificationPage.fromJson({'ok': true});

@@ -8,15 +8,57 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models.dart';
+import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
+import 'file_viewer_screen.dart';
 
-class NotificationDetailScreen extends StatelessWidget {
+class NotificationDetailScreen extends ConsumerWidget {
   const NotificationDetailScreen({super.key, required this.item});
 
   final NotificationItem item;
+
+  /// Jump to the recording this alert fired on.
+  ///
+  /// The feed listing is the source of truth for what still exists, so we look
+  /// the name up there rather than trusting the alert: a stream rolls old
+  /// recordings off, and a months-old notification can easily outlive its file.
+  Future<void> handleOpenRecording(BuildContext context, WidgetRef ref) async {
+    final fileName = item.fileName;
+    if (fileName == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    List<StreamFile> files;
+    try {
+      files = await ref.read(streamFilesProvider(item.streamFolder).future);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Could not load the stream: $e')));
+      return;
+    }
+
+    final index = files.indexWhere((f) => f.name == fileName);
+    if (index < 0) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('That recording is no longer in the stream folder.')),
+      );
+      return;
+    }
+
+    navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => FileViewerScreen(
+          folder: item.streamFolder,
+          files: files,
+          initialIndex: index,
+        ),
+      ),
+    );
+  }
 
   void handleCopy(BuildContext context) {
     final t = item.sentAtUtc;
@@ -35,7 +77,7 @@ class NotificationDetailScreen extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = item.sentAtUtc;
 
     return Scaffold(
@@ -112,6 +154,20 @@ class NotificationDetailScreen extends StatelessWidget {
             ),
           ],
 
+          // Only per-file alerts can be traced to a recording; an hourly digest
+          // covers many, so there is nothing single to open.
+          if (item.hasFile) ...[
+            const SizedBox(height: 20),
+            FilledButton.tonalIcon(
+              onPressed: () => handleOpenRecording(context, ref),
+              icon: const Icon(Icons.graphic_eq, size: 18),
+              label: const Text('Open recording'),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          ],
+
           const SizedBox(height: 24),
           const Text(
             'DETAILS',
@@ -124,6 +180,7 @@ class NotificationDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _Row(label: 'Stream', value: item.streamFolder),
+          if (item.hasFile) _Row(label: 'Recording', value: item.fileName!),
           _Row(label: 'Type', value: _kindLabel(item.kind)),
           _Row(label: 'Channel', value: item.channel),
           if (item.recipient != null) _Row(label: 'Sent to', value: item.recipient!),

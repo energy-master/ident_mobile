@@ -216,9 +216,22 @@ class _NotificationTile extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 4),
-                  Text(
-                    subtitleParts.join(' · '),
-                    style: const TextStyle(color: IdentColors.idle, fontSize: 11.5),
+                  Row(
+                    children: [
+                      // Marks the alerts that can be opened straight to their
+                      // recording, so the ones that can't don't look broken.
+                      if (item.hasFile) ...[
+                        const Icon(Icons.graphic_eq, size: 11, color: IdentColors.accent),
+                        const SizedBox(width: 4),
+                      ],
+                      Flexible(
+                        child: Text(
+                          subtitleParts.join(' · '),
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: IdentColors.idle, fontSize: 11.5),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),

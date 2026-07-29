@@ -4,11 +4,10 @@
 /// and the live spectrogram images. The sensor map, vessel list and live WebGL
 /// render stay on the desktop for now.
 ///
-/// Layout adapts rather than duplicating: on a phone the pages are a swipeable
-/// [PageView] with a dot indicator; on a tablet there is room for both at once,
-/// so they sit side by side the way the web dashboard tiles them. Both branches
-/// build the *same* page widgets — the only difference is how they are arranged,
-/// so a fix to a page lands on both form factors.
+/// **One data flow per screen, at every size.** Notifications and the live feed
+/// are never shown side by side, even where a tablet has the room: each is a
+/// distinct thing to read, and splitting the screen halves both without making
+/// either easier to follow. The tabs swap between them; nothing tiles.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,11 +19,6 @@ import 'images_page.dart';
 import 'notifications_page.dart';
 import 'streams_screen.dart' show DiagnosticsDetail;
 
-/// Below this width the dashboard is one page at a time. 720dp is the point at
-/// which two columns stop being cramped — small tablets and phones in landscape
-/// get the split view, phones in portrait do not.
-const double _tabletBreakpoint = 720;
-
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key, required this.stream});
 
@@ -32,8 +26,6 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isWide = MediaQuery.sizeOf(context).width >= _tabletBreakpoint;
-
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -56,9 +48,7 @@ class DashboardScreen extends ConsumerWidget {
       ),
       body: SafeArea(
         top: false,
-        child: isWide
-            ? _WideLayout(stream: stream)
-            : _PagedLayout(stream: stream),
+        child: _PagedLayout(stream: stream),
       ),
     );
   }
@@ -144,70 +134,6 @@ class _PagedLayoutState extends State<_PagedLayout> {
             ],
           ),
         ),
-      ],
-    );
-  }
-}
-
-/// Tablet: both pages at once, notifications narrower than the waterfall since
-/// the images benefit more from the extra width.
-class _WideLayout extends StatelessWidget {
-  const _WideLayout({required this.stream});
-
-  final String stream;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          flex: 4,
-          child: _Panel(
-            title: 'Notifications',
-            child: NotificationsPage(stream: stream),
-          ),
-        ),
-        const VerticalDivider(width: 1),
-        Expanded(
-          flex: 5,
-          child: _Panel(
-            title: 'Live images',
-            child: ImagesPage(stream: stream),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _Panel extends StatelessWidget {
-  const _Panel({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
-          ),
-          child: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: IdentColors.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.8,
-            ),
-          ),
-        ),
-        Expanded(child: child),
       ],
     );
   }
