@@ -95,6 +95,12 @@ final streamFolderProvider =
   return null;
 });
 
+/// Detections across a whole stream — the decisions data window.
+final streamDecisionsProvider =
+    FutureProvider.autoDispose.family<DecisionList, String>((ref, folder) {
+  return _guard(ref, (c) => c.streamDecisions(folder));
+});
+
 /// Every detection against one recording.
 final fileDecisionsProvider = FutureProvider.autoDispose
     .family<DecisionList, ({String folder, String file})>((ref, args) {

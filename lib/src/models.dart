@@ -258,6 +258,7 @@ class Decision {
     required this.tmin,
     required this.tmax,
     required this.source,
+    this.fileName,
     this.modelId,
     this.target,
     this.score,
@@ -265,6 +266,11 @@ class Decision {
     this.fmax,
     this.threshold,
   });
+
+  /// The recording this detection is in. Present in the stream-wide feed, where
+  /// rows come from many files; null in the per-file list, where the file is
+  /// already the context.
+  final String? fileName;
 
   /// Null for a folder sidecar — an off-box detector has no model row.
   final int? modelId;
@@ -285,6 +291,9 @@ class Decision {
   bool get isSidecar => source == 'sidecar';
 
   factory Decision.fromJson(Map<String, dynamic> json) => Decision(
+        fileName: (json['file_name']?.toString().isEmpty ?? true)
+            ? null
+            : json['file_name'].toString(),
         modelId: _asInt(json['model_id']),
         modelName: (json['model_name'] ?? '').toString(),
         target: (json['target']?.toString().isEmpty ?? true) ? null : json['target'].toString(),

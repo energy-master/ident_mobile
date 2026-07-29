@@ -7,6 +7,10 @@
 /// no intermediate list of files — the strip *is* the list, always in view, so
 /// reaching a recording never costs a screen transition.
 ///
+/// The strip is the only way to change recording by gesture: a horizontal drag
+/// belongs to the dashboard, which swipes between its data windows. See
+/// `_buildPager`.
+///
 /// Orientation is never forced. The spectrogram keeps its natural wide aspect
 /// either way; what changes is where the strip lives — along the bottom in
 /// portrait, down the side in landscape, where vertical space is the scarce
@@ -225,13 +229,19 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     );
   }
 
-  /// Swiping the image moves between recordings — the same thing the strip does
-  /// by tap, so either habit works.
+  /// The image pager is driven by the strip, not by dragging the image.
+  ///
+  /// The dashboard swipes horizontally between its data windows, and a
+  /// horizontal pager nested inside it would swallow that gesture — you could
+  /// never leave Live images by swiping. So this keeps the page transition but
+  /// takes no drag of its own: the strip (and the date search) move between
+  /// recordings, and a horizontal drag belongs to the dashboard.
   Widget _buildPager() {
     final client = ref.watch(apiClientProvider);
 
     return PageView.builder(
       controller: _pages,
+      physics: const NeverScrollableScrollPhysics(),
       onPageChanged: handlePageChanged,
       itemCount: widget.files.length,
       itemBuilder: (context, i) => Padding(
@@ -263,6 +273,11 @@ class _FileViewerState extends ConsumerState<FileViewer> {
       child: ListView.builder(
         controller: _strip,
         scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
+        // Time runs the same way the web app's waterfall runs: the newest
+        // recording sits at the end (right / bottom) and history extends back
+        // from it, so scrolling *away* from the newest means going back in
+        // time. Index 0 is still the newest, so the strip opens on it.
+        reverse: true,
         itemExtent: _stripItemExtent,
         itemCount: widget.files.length,
         itemBuilder: (context, i) {

@@ -21,6 +21,7 @@ import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
 import 'dashboard_screen.dart';
+import 'ident_logo.dart';
 import 'notifications_page.dart';
 import 'status_dot.dart';
 
@@ -172,50 +173,21 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
   }
 }
 
-/// Home-screen title: the account's company logo when the lead has uploaded
-/// one, otherwise just the screen name.
-///
-/// Mirrors the SPA chrome (index.php), which shows the lead logo beside the
-/// IDent dynamics mark. Failure is silent by design — a missing or broken logo
-/// falls back to the plain title rather than showing a broken-image box in the
-/// app bar, because branding is decoration and must never look like an error.
+/// Home-screen title: the IDent wordmark, with the account's company logo to
+/// its right when the lead has uploaded one — the same order as the SPA splash.
 class _Branding extends ConsumerWidget {
   const _Branding();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final me = ref.watch(meProvider).valueOrNull;
-    final branding = me?.branding;
+    final branding = ref.watch(meProvider).valueOrNull?.branding;
     final client = ref.watch(apiClientProvider);
 
-    const title = Text('Streams');
+    final logoUrl = (branding != null && client != null && branding.logoPath != null)
+        ? client.siteUrl(branding.logoPath!).toString()
+        : null;
 
-    if (branding == null || client == null || !branding.hasLogo || branding.logoPath == null) {
-      return title;
-    }
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 28, maxWidth: 132),
-          child: Image.network(
-            client.siteUrl(branding.logoPath!).toString(),
-            fit: BoxFit.contain,
-            semanticLabel: branding.companyName.isEmpty
-                ? 'Company logo'
-                : '${branding.companyName} logo',
-            errorBuilder: (_, _, _) => title,
-            loadingBuilder: (context, child, progress) =>
-                progress == null ? child : const SizedBox(width: 60),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Container(width: 1, height: 18, color: const Color(0x33FFFFFF)),
-        const SizedBox(width: 10),
-        const Text('Streams', style: TextStyle(fontSize: 15)),
-      ],
-    );
+    return BrandingRow(logoUrl: logoUrl, companyName: branding?.companyName);
   }
 }
 

@@ -264,6 +264,16 @@ class ApiClient {
     return DecisionList.fromJson(body);
   }
 
+  /// Detections across a whole stream, newest recording first. Each row names
+  /// its recording, so the feed can open the file a detection came from.
+  Future<DecisionList> streamDecisions(String folder, {int limit = 300}) async {
+    final body = await getJson('api/idapi/stream_decisions_list.php', {
+      'folder': folder,
+      'limit': '$limit',
+    });
+    return DecisionList.fromJson(body);
+  }
+
   /// The recordings this user has starred in one folder.
   Future<Set<String>> favourites(String folder) async {
     final body = await getJson('api/idapi/favourites_list.php', {'folder': folder});
