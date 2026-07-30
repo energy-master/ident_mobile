@@ -237,7 +237,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       // The real wordmark rather than a generic icon — this is the
                       // first thing a user sees, so it should be the product's own
                       // mark, at splash scale.
-                      const Center(child: IdentLogo(scale: 2.4)),
+                      // The full lockup, φ included — `.auth-logo` in
+                      // login.php carries the same mark as the app bar, only
+                      // larger.
+                      const Center(child: IdentLockup(scale: 2.4)),
                       const SizedBox(height: 20),
                       const Text(
                         'Sign in to monitor your streams',

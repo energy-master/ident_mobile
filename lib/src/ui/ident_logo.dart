@@ -55,11 +55,104 @@ class IdentLogo extends StatelessWidget {
   }
 }
 
-/// The IDent wordmark, then the company logo when the account's lead has one.
+/// The φ that closes the lockup.
 ///
-/// Failure is silent: a missing or slow logo collapses to the wordmark alone
-/// rather than showing a broken-image box or a gap, because branding is
-/// decoration and must never read as an error.
+/// `.logo-phi` in styles.css:956 — Courier rather than the wordmark's monospace,
+/// and set light. Courier ships no light weight, so the web asking for 200 gets
+/// regular; the stroke reads thin because Courier is thin, not because a weight
+/// was found. Asking for w300 here rather than w200 keeps Flutter from
+/// synthesising one.
+///
+/// This is also the app icon (see `tool/generate_icons.py`), which is the point:
+/// the mark on the home screen is the mark that closes the header.
+class IdentPhi extends StatelessWidget {
+  const IdentPhi({super.key, this.scale = 1});
+
+  /// Matches [IdentLogo.scale] — 2.4rem against the wordmark's 1.35rem.
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'φ',
+      style: TextStyle(
+        color: identGreen,
+        fontFamily: 'Courier New',
+        fontFamilyFallback: const ['Courier', 'monospace'],
+        fontWeight: FontWeight.w300,
+        fontSize: 15 * (2.4 / 1.35) * scale,
+        // No `height: 1` despite the CSS. There it stops an inline box adding
+        // leading inside a flex row; here it would crop the line box below
+        // Courier's descender, and φ has one. The extra space is transparent
+        // and the glyph is top-anchored, so it costs nothing visible.
+      ),
+    );
+  }
+}
+
+/// The full mark: wordmark, divider, and a closing glyph.
+///
+/// One lockup, because the web has one. `#app-logo` in index.php and
+/// `.auth-logo` on the sign-in pages differ only in size — both are
+/// `IDent dynamics | φ`, and both swap a company mark in for the φ when the
+/// install or the account has one. Keeping the sign-in screen and the app bar on
+/// this single widget is what stops them drifting into two different marks.
+///
+/// [mark] replaces the φ; it does not sit beside it. The divider stays either
+/// way, so the lockup reads as one unit at every size:
+///
+///     IDent dynamics  |  φ         the hosted install, no lead logo
+///     IDent dynamics  |  <logo>    a client implementation
+class IdentLockup extends StatelessWidget {
+  const IdentLockup({super.key, this.scale = 1, this.mark});
+
+  final double scale;
+
+  /// What closes the lockup. Null gives the φ, which is the default state on
+  /// goident.ai rather than an edge case.
+  final Widget? mark;
+
+  @override
+  Widget build(BuildContext context) {
+    // 0.6rem against the wordmark's 1.35rem, either side of the rule.
+    final gap = 10.0 * scale;
+
+    return IntrinsicHeight(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        // `align-items: stretch`, so the divider spans the wordmark; the glyph
+        // beside it is pulled back to the top below.
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(alignment: Alignment.centerLeft, child: IdentLogo(scale: scale)),
+          SizedBox(width: gap),
+          // currentColor at 0.45 — the rule is the wordmark's own green, not a
+          // neutral divider. A hairline at every scale, as in the CSS.
+          Container(width: 1, color: identGreen.withValues(alpha: 0.45)),
+          SizedBox(width: gap),
+          Align(
+            // `align-self: flex-start`: the closing glyph sits in line with
+            // "IDent" rather than floating against the middle of the wordmark.
+            alignment: Alignment.topLeft,
+            child: mark ?? IdentPhi(scale: scale),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The lockup as the app bar wears it, closed by the account's company logo when
+/// the lead has uploaded one.
+///
+/// The divider used to be drawn only alongside a logo, which left goident.ai —
+/// where most accounts have no lead logo — showing a bare wordmark and no φ.
+///
+/// Failure is silent, and now has somewhere to fall back to: a missing or slow
+/// logo shows the φ rather than a broken-image box or a gap, so the lockup is
+/// never caught mid-way and branding never reads as an error. That is also how
+/// the web arrives at it — the SPA renders the φ and a script swaps the mark in
+/// once it resolves (auth.php:145).
 class BrandingRow extends StatelessWidget {
   const BrandingRow({super.key, this.logoUrl, this.companyName});
 
@@ -69,30 +162,22 @@ class BrandingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = logoUrl;
+    if (url == null) return const IdentLockup();
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const IdentLogo(),
-        if (url != null) ...[
-          const SizedBox(width: 10),
-          Container(width: 1, height: 26, color: const Color(0x3DFFFFFF)),
-          const SizedBox(width: 10),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 28, maxWidth: 120),
-            child: Image.network(
-              url,
-              fit: BoxFit.contain,
-              semanticLabel: (companyName == null || companyName!.isEmpty)
-                  ? 'Company logo'
-                  : '$companyName logo',
-              errorBuilder: (_, _, _) => const SizedBox.shrink(),
-              loadingBuilder: (context, child, progress) =>
-                  progress == null ? child : const SizedBox.shrink(),
-            ),
-          ),
-        ],
-      ],
+    return IdentLockup(
+      mark: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 28, maxWidth: 120),
+        child: Image.network(
+          url,
+          fit: BoxFit.contain,
+          semanticLabel: (companyName == null || companyName!.isEmpty)
+              ? 'Company logo'
+              : '$companyName logo',
+          errorBuilder: (_, _, _) => const IdentPhi(),
+          loadingBuilder: (context, child, progress) =>
+              progress == null ? child : const IdentPhi(),
+        ),
+      ),
     );
   }
 }
