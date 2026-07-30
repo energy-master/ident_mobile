@@ -122,4 +122,77 @@ void main() {
       expect(durations, isEmpty);
     });
   });
+
+  group('recordingAt', () {
+    // Filenames carry the start time, which is what StreamFile.startTime parses.
+    final files = [
+      f('_20260730_120000_0.wav', shortSize), // 12:00:00
+      f('_20260730_121000_0.wav', shortSize), // 12:10:00
+    ];
+    const durations = {
+      '_20260730_120000_0.wav': 300000, // 5 min
+      '_20260730_121000_0.wav': 300000,
+    };
+
+    test('finds the recording an instant falls inside', () {
+      final hit = recordingAt(
+        DateTime.utc(2026, 7, 30, 12, 3),
+        files,
+        durations,
+      );
+      expect(hit!.name, '_20260730_120000_0.wav');
+    });
+
+    test('the last moment of a recording still counts as inside it', () {
+      final hit = recordingAt(
+        DateTime.utc(2026, 7, 30, 12, 5),
+        files,
+        durations,
+      );
+      expect(hit!.name, '_20260730_120000_0.wav');
+    });
+
+    test('a gap between recordings resolves to the nearest one', () {
+      // 12:07 is two minutes past the first file's end and three short of the
+      // second's start — the operator means the first.
+      final hit = recordingAt(
+        DateTime.utc(2026, 7, 30, 12, 7),
+        files,
+        durations,
+      );
+      expect(hit!.name, '_20260730_120000_0.wav');
+    });
+
+    test('an instant nothing covers resolves to nothing', () {
+      // Real in the wider AIS ranges: fixes routinely predate the oldest
+      // recording still on disk, and jumping to the nearest file hours away
+      // would show the operator the wrong audio without saying so.
+      expect(
+        recordingAt(DateTime.utc(2026, 7, 30, 9), files, durations),
+        isNull,
+      );
+      expect(
+        recordingAt(DateTime.utc(2026, 7, 30, 18), files, durations),
+        isNull,
+      );
+    });
+
+    test('a file with no estimated duration is treated as an instant', () {
+      final hit = recordingAt(
+        DateTime.utc(2026, 7, 30, 12, 3),
+        files,
+        const {},
+      );
+      // Still reachable by proximity, but it never claims to cover the span.
+      expect(hit!.name, '_20260730_120000_0.wav');
+      expect(
+        recordingAt(DateTime.utc(2026, 7, 30, 12, 30), files, const {}),
+        isNull,
+      );
+    });
+
+    test('an empty folder resolves to nothing', () {
+      expect(recordingAt(DateTime.utc(2026), const [], const {}), isNull);
+    });
+  });
 }

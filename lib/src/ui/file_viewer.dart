@@ -20,6 +20,7 @@ library;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api_client.dart';
@@ -29,6 +30,36 @@ import '../spectrogram_geometry.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
+/// Where the viewer should sit after its file list is replaced.
+///
+/// The live feed re-reads its folder every minute, so this runs constantly and
+/// decides whether the user keeps their place. Extracted from the widget because
+/// the rules are easy to get subtly wrong and impossible to see once wrong: an
+/// off-by-one shows up as the feed drifting one recording per refresh.
+///
+/// [index] is the position in [oldNames]. Returns the position in [newNames]:
+///   * pinned and already on the newest → follow the new newest (index 0);
+///   * otherwise → wherever the recording they were reading moved to;
+///   * and if that recording is gone entirely, the nearest surviving position.
+int nextIndexAfterRefresh({
+  required List<String> oldNames,
+  required List<String> newNames,
+  required int index,
+  required bool pinToNewest,
+}) {
+  if (newNames.isEmpty) return 0;
+  final last = newNames.length - 1;
+  if (oldNames.isEmpty) return index.clamp(0, last);
+
+  // "On the newest" is what makes pinning safe: someone who has scrubbed back
+  // into history is reading, and must not be dragged forward by an arrival.
+  if (pinToNewest && index == 0) return 0;
+
+  final current = oldNames[index.clamp(0, oldNames.length - 1)];
+  final found = newNames.indexOf(current);
+  return found >= 0 ? found : index.clamp(0, last);
+}
+
 /// Embeddable viewer. Hosts its own header, so it works both inside a tab (the
 /// live feed) and inside a Scaffold (opened from a notification).
 class FileViewer extends ConsumerStatefulWidget {
@@ -37,6 +68,7 @@ class FileViewer extends ConsumerStatefulWidget {
     required this.folder,
     required this.files,
     this.initialIndex = 0,
+    this.pinToNewest = false,
   });
 
   final String folder;
@@ -45,6 +77,13 @@ class FileViewer extends ConsumerStatefulWidget {
   final List<StreamFile> files;
 
   final int initialIndex;
+
+  /// Follow new arrivals — the live feed's behaviour.
+  ///
+  /// Only while the user is actually sitting on the newest recording. Someone
+  /// who has scrubbed back into history is reading something, and yanking them
+  /// forward because a new file landed is the rudest thing this screen could do.
+  final bool pinToNewest;
 
   @override
   ConsumerState<FileViewer> createState() => _FileViewerState();
@@ -83,7 +122,50 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   /// selection has to be visible outside the viewer.
   void _publishActiveFile() {
     if (widget.files.isEmpty) return;
-    ref.read(activeFileProvider(widget.folder).notifier).state = _file;
+    final notifier = ref.read(activeFileProvider(widget.folder).notifier);
+    // A refresh rebuilds every StreamFile, so the selection is a new object each
+    // minute even when the user has not moved. Comparing by name keeps that from
+    // reading as a change and rebuilding the map for nothing.
+    if (notifier.state?.name == _file.name) return;
+    notifier.state = _file;
+  }
+
+  /// Absorb a refreshed file list in place, rather than being rebuilt around it.
+  ///
+  /// The live feed re-reads the folder every minute. This viewer used to be
+  /// keyed on the newest filename, so each new arrival tore the whole thing down
+  /// and built it again — new controllers, a new strip, and every thumbnail
+  /// request in flight restarted from nothing. On a folder of several thousand
+  /// recordings that was the app's single largest repeating cost, and it also
+  /// lost the user's position every time.
+  ///
+  /// So the list is now absorbed: hold the user on the recording they were
+  /// reading (its index moves as files are prepended), and only follow the
+  /// newest when they were already on it.
+  @override
+  void didUpdateWidget(FileViewer old) {
+    super.didUpdateWidget(old);
+    if (identical(old.files, widget.files) || widget.files.isEmpty) return;
+
+    final next = nextIndexAfterRefresh(
+      oldNames: old.files.map((f) => f.name).toList(growable: false),
+      newNames: widget.files.map((f) => f.name).toList(growable: false),
+      index: _index,
+      pinToNewest: widget.pinToNewest,
+    );
+
+    if (next != _index) setState(() => _index = next);
+
+    // After this frame: the PageView has not yet laid out against the new
+    // itemCount, so jumping now would measure against the old extent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_pages.hasClients && _pages.page?.round() != _index) {
+        _pages.jumpToPage(_index);
+      }
+      _centreStrip(_index, animate: false);
+      _publishActiveFile();
+    });
   }
 
   @override
@@ -266,6 +348,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   /// recordings, and a horizontal drag belongs to the dashboard.
   Widget _buildPager() {
     final client = ref.watch(apiClientProvider);
+    final missing = ref.read(missingThumbsProvider);
 
     return PageView.builder(
       controller: _pages,
@@ -295,6 +378,8 @@ class _FileViewerState extends ConsumerState<FileViewer> {
               child: _Spectrogram(
                 url: client?.thumbUrl(widget.folder, widget.files[i]).toString(),
                 headers: client?.imageHeaders ?? const {},
+                missing: missing.contains(widget.folder, widget.files[i].thumbName),
+                onMissing: () => missing.add(widget.folder, widget.files[i].thumbName),
                 decisions: decisions,
                 // This file's own duration — the overlay's whole time axis.
                 durationMs: durations[widget.files[i].name],
@@ -313,6 +398,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     // be absurd for a decoration on a scrolling strip.
     final counts =
         ref.watch(decisionCountsProvider(widget.folder)).valueOrNull ?? const <String, int>{};
+    final missing = ref.read(missingThumbsProvider);
 
     return Container(
       decoration: BoxDecoration(
@@ -341,6 +427,8 @@ class _FileViewerState extends ConsumerState<FileViewer> {
             hasDecisions: (counts[f.name] ?? 0) > 0,
             url: client?.thumbUrl(widget.folder, f).toString(),
             headers: client?.imageHeaders ?? const {},
+            missing: missing.contains(widget.folder, f.thumbName),
+            onMissing: () => missing.add(widget.folder, f.thumbName),
             onTap: () => handleStripTap(i),
           );
         },
@@ -425,11 +513,22 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// True when a failed image fetch means the server holds no snapshot for this
+/// recording, as opposed to the phone being unable to reach it.
+///
+/// Only the former is worth remembering. Writing off a lane because the network
+/// dropped for a moment would leave it blank until the next explicit refresh,
+/// which reads as missing data rather than as the transient it was.
+bool _isMissingSnapshot(Object? error) =>
+    error is HttpExceptionWithStatus && error.statusCode == 404;
+
 /// The spectrogram, at its rendered aspect (200x64), with detections drawn over it.
 class _Spectrogram extends StatelessWidget {
   const _Spectrogram({
     required this.url,
     required this.headers,
+    required this.missing,
+    required this.onMissing,
     this.decisions = const [],
     this.durationMs,
     this.sampleRate,
@@ -437,13 +536,24 @@ class _Spectrogram extends StatelessWidget {
 
   final String? url;
   final Map<String, String> headers;
+
+  /// Already known to have no snapshot — draw the placeholder without asking.
+  final bool missing;
+
+  /// Called when the server answers 404, so the strip and the pager stop
+  /// re-requesting this recording on every rebuild.
+  final VoidCallback onMissing;
+
   final List<Decision> decisions;
   final int? durationMs;
   final int? sampleRate;
 
+  static const _noSnapshot = 'This recording has no rendered spectrogram yet.';
+
   @override
   Widget build(BuildContext context) {
     if (url == null) return const _Unavailable(message: 'Not signed in.');
+    if (missing) return const _Unavailable(message: _noSnapshot);
 
     return AspectRatio(
       aspectRatio: 200 / 64,
@@ -463,9 +573,10 @@ class _Spectrogram extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              errorWidget: (_, _, _) => const _Unavailable(
-                message: 'This recording has no rendered spectrogram yet.',
-              ),
+              errorWidget: (_, _, error) {
+                if (_isMissingSnapshot(error)) onMissing();
+                return const _Unavailable(message: _noSnapshot);
+              },
             ),
             if (decisions.isNotEmpty && durationMs != null && durationMs! > 0)
               IgnorePointer(
@@ -604,6 +715,8 @@ class _StripItem extends StatelessWidget {
     required this.hasDecisions,
     required this.url,
     required this.headers,
+    required this.missing,
+    required this.onMissing,
     required this.onTap,
   });
 
@@ -613,6 +726,13 @@ class _StripItem extends StatelessWidget {
   final bool hasDecisions;
   final String? url;
   final Map<String, String> headers;
+
+  /// Already known to have no snapshot. This is the one that matters for load:
+  /// a strip pass over an unrendered folder is one request per lane, and without
+  /// it every pass repeats them.
+  final bool missing;
+
+  final VoidCallback onMissing;
   final VoidCallback onTap;
 
   @override
@@ -636,7 +756,7 @@ class _StripItem extends StatelessWidget {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(3),
-                    child: url == null
+                    child: (url == null || missing)
                         ? const ColoredBox(color: Color(0xFF11151D))
                         : CachedNetworkImage(
                             imageUrl: url!,
@@ -644,7 +764,10 @@ class _StripItem extends StatelessWidget {
                             fit: BoxFit.cover,
                             width: double.infinity,
                             placeholder: (_, _) => const ColoredBox(color: Color(0xFF11151D)),
-                            errorWidget: (_, _, _) => const ColoredBox(color: Color(0xFF11151D)),
+                            errorWidget: (_, _, error) {
+                              if (_isMissingSnapshot(error)) onMissing();
+                              return const ColoredBox(color: Color(0xFF11151D));
+                            },
                           ),
                   ),
                   // Marks a recording that fired, so detections are findable

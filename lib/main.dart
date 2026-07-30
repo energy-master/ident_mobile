@@ -14,7 +14,24 @@ import 'src/theme.dart';
 import 'src/ui/login_screen.dart';
 import 'src/ui/streams_screen.dart';
 
+/// Ceiling on decoded spectrogram snapshots held in memory.
+///
+/// Flutter's default is 1000 images / 100 MiB, which was written for a screen
+/// showing a handful of photographs. This app scrolls a thumbnail strip across
+/// folders of several thousand recordings, so it will fill whatever it is given
+/// and then sit at that size for the rest of the session.
+///
+/// Snapshots are 200x64, so ~51 KB decoded: 400 of them is about 20 MB, and the
+/// strip only ever shows six or seven at once. Anything evicted is still on
+/// disk — `cached_network_image` re-reads it without touching the network.
+const _imageCacheCount = 400;
+const _imageCacheBytes = 32 << 20;   // 32 MiB
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  PaintingBinding.instance.imageCache
+    ..maximumSize = _imageCacheCount
+    ..maximumSizeBytes = _imageCacheBytes;
   runApp(const ProviderScope(child: IdentApp()));
 }
 

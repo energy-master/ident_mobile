@@ -295,11 +295,27 @@ class ApiClient {
   /// "what was here while this was recorded", which is the only framing in
   /// which a detection from days ago makes sense. Omit both to get a live
   /// snapshot instead.
-  Future<List<Vessel>> vessels(String stream, {DateTime? from, DateTime? to}) async {
+  ///
+  /// [all] asks for every fix the poller has logged for this sensor, ignoring
+  /// the window — the same `all=1` mode the web map uses. It exists because a
+  /// five-second recording spans less than one AIS report, so the windowed
+  /// answer to "what was here" is legitimately empty however much traffic there
+  /// was. The server caps it at 50,000 fixes.
+  Future<List<Vessel>> vessels(
+    String stream, {
+    DateTime? from,
+    DateTime? to,
+    bool all = false,
+  }) async {
     final body = await getJson('api/idapi/ais.php', {
       'stream': stream,
-      if (from != null) 'from': '${from.toUtc().millisecondsSinceEpoch ~/ 1000}',
-      if (to != null) 'to': '${to.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      // The endpoint ignores from/to in all mode; they are dropped rather than
+      // sent and ignored so the request says what it means.
+      if (all) 'all': '1',
+      if (!all && from != null)
+        'from': '${from.toUtc().millisecondsSinceEpoch ~/ 1000}',
+      if (!all && to != null)
+        'to': '${to.toUtc().millisecondsSinceEpoch ~/ 1000}',
     });
     return (body['vessels'] as List<dynamic>? ?? const [])
         .whereType<Map>()

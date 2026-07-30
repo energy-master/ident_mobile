@@ -42,20 +42,35 @@ class ImagesPage extends ConsumerStatefulWidget {
   ConsumerState<ImagesPage> createState() => _ImagesPageState();
 }
 
-class _ImagesPageState extends ConsumerState<ImagesPage> {
+class _ImagesPageState extends ConsumerState<ImagesPage> with WidgetsBindingObserver {
   FeedMode _mode = FeedMode.live;
   Timer? _poll;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _syncPolling();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _poll?.cancel();
     super.dispose();
+  }
+
+  /// A backgrounded phone has nobody watching the feed, and every poll re-reads
+  /// the whole folder — thousands of recordings for the larger streams. Matches
+  /// what the stream list already does with its diagnostics poll.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncPolling();
+      ref.invalidate(streamFilesProvider(widget.stream));
+    } else {
+      _poll?.cancel();
+    }
   }
 
   /// Only the live view polls; browsing history has nothing to wait for.
@@ -73,6 +88,10 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
   }
 
   void handleRefresh() {
+    // An explicit refresh is also the one moment to re-ask for snapshots this
+    // folder had none of: they are built server-side and can appear at any
+    // time, so the "no snapshot" verdicts must not outlive a deliberate reload.
+    ref.read(missingThumbsProvider).clear(widget.stream);
     ref.invalidate(streamFilesProvider(widget.stream));
     ref.read(favouritesProvider(widget.stream).notifier).load();
   }
@@ -125,14 +144,16 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
     // a normal state rather than a data problem — say which filter emptied it.
     if (files.isEmpty) return _FilterEmpty(mode: _mode);
 
-    // The key decides when the viewer restarts at the newest recording.
+    // One key per mode, and nothing in it that changes as recordings arrive.
     //
-    // In Live it includes the newest filename, so the arrival of a new
-    // recording re-mounts the viewer onto it — that is what makes it live.
-    // In All and Favourites the key is stable, so a refresh in the background
-    // never yanks the user away from the recording they are reading.
+    // Live used to key on the newest filename so a new arrival re-mounted the
+    // viewer onto it. That worked, but it rebuilt several thousand strip cells
+    // and restarted every thumbnail request once a minute, forever. The viewer
+    // now follows new arrivals itself (see FileViewer.didUpdateWidget), so the
+    // key only has to change when the *contents* mean something different —
+    // which is when the filter changes.
     final key = switch (_mode) {
-      FeedMode.live => ValueKey('live-${files.first.name}'),
+      FeedMode.live => const ValueKey('live'),
       FeedMode.all => const ValueKey('all'),
       FeedMode.active => const ValueKey('active'),
       FeedMode.favourites => const ValueKey('favourites'),
@@ -143,6 +164,7 @@ class _ImagesPageState extends ConsumerState<ImagesPage> {
       folder: widget.stream,
       files: files,
       initialIndex: 0,
+      pinToNewest: _mode == FeedMode.live,
     );
   }
 }

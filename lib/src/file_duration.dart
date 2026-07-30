@@ -96,3 +96,46 @@ Map<String, int> estimateDurations(
   }
   return out;
 }
+
+/// How far outside every recording an instant may fall and still resolve.
+const recordingSearchTolerance = Duration(minutes: 5);
+
+/// The recording covering [instant], or the nearest one within [tolerance].
+///
+/// Returns **null** when nothing is close enough, and that case is real rather
+/// than defensive: the AIS map can show fixes from long before the oldest
+/// recording still on disk, and the honest answer to "take me to this moment" is
+/// then "there is no recording of it". Jumping to whatever file happens to be
+/// nearest would silently show the operator the wrong audio.
+///
+/// A recording's span is its start plus its estimated duration ([durations],
+/// keyed by filename); a file with no estimate is treated as an instant, so it
+/// can still be reached by proximity but never falsely claims to cover an hour.
+StreamFile? recordingAt(
+  DateTime instant,
+  List<StreamFile> files,
+  Map<String, int> durations, {
+  Duration tolerance = recordingSearchTolerance,
+}) {
+  final t = instant.millisecondsSinceEpoch;
+
+  StreamFile? nearest;
+  var nearestGap = double.infinity;
+
+  for (final f in files) {
+    final start = f.startTime.millisecondsSinceEpoch;
+    final end = start + (durations[f.name] ?? 0);
+
+    if (t >= start && t <= end) return f;
+
+    final gap = (t < start ? start - t : t - end).toDouble();
+    // Strictly less-than, so a tie keeps the first file in list order rather
+    // than the last — same input, same answer, every call.
+    if (gap < nearestGap) {
+      nearestGap = gap;
+      nearest = f;
+    }
+  }
+
+  return nearestGap <= tolerance.inMilliseconds ? nearest : null;
+}

@@ -39,6 +39,10 @@ dependencies:
   flutter_secure_storage: ^10.3.1
   intl: ^0.20.3
   cached_network_image: ^3.4.1
+  # Already pulled in by cached_network_image; named directly because the file
+  # viewer reads `HttpExceptionWithStatus.statusCode` to tell "this recording has
+  # no snapshot" (404) from "the network is down", and only remembers the former.
+  flutter_cache_manager: ^3.4.2
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
 

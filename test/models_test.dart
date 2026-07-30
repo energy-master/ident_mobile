@@ -247,6 +247,39 @@ void main() {
       expect(Vessel.fromJson({'mmsi': 42, 'name': '   ', 'track': []}).label, '42');
     });
 
+    test('keeps the server\'s own stamp for a fix', () {
+      // The sheet quotes this back verbatim: when a fix looks wrong, the string
+      // the database holds is worth more than a reformatted one.
+      final v = Vessel.fromJson({
+        'mmsi': 1,
+        'track': [
+          {'lat': 1, 'lng': 2, 't': 1, 'fetched_at': '2026-07-29 14:20:00'},
+        ],
+      });
+      expect(v.track.first.fetchedAt, '2026-07-29 14:20:00');
+    });
+
+    test('a fix with no stamp is ordinary, not an error', () {
+      final v = Vessel.fromJson({
+        'mmsi': 1,
+        'track': [
+          {'lat': 1, 'lng': 2, 't': 1},
+          {'lat': 1, 'lng': 2, 't': 2, 'fetched_at': ''},
+        ],
+      });
+      expect(v.track.every((p) => p.fetchedAt == null), isTrue);
+    });
+
+    test('held position carries how long the vessel sat there', () {
+      const moored = TrackPoint(lat: 1, lng: 2, t: 1000, tLast: 301000, n: 6);
+      expect(moored.held, isTrue);
+      expect(moored.heldFor, const Duration(minutes: 5));
+
+      const passing = TrackPoint(lat: 1, lng: 2, t: 1000);
+      expect(passing.held, isFalse);
+      expect(passing.heldFor, isNull);
+    });
+
     test('a single-point track is not moving', () {
       final v = Vessel.fromJson({
         'mmsi': 1,
@@ -288,16 +321,16 @@ void main() {
   group('StreamFile', () {
     test('derives the snapshot name by swapping the extension', () {
       expect(
-        const StreamFile(name: '_20260728_132408_000.wav', sizeBytes: 1, modified: 1).thumbName,
+        StreamFile(name: '_20260728_132408_000.wav', sizeBytes: 1, modified: 1).thumbName,
         '_20260728_132408_000.png',
       );
       expect(
-        const StreamFile(name: 'a.b.flac', sizeBytes: 1, modified: 1).thumbName,
+        StreamFile(name: 'a.b.flac', sizeBytes: 1, modified: 1).thumbName,
         'a.b.png',
       );
       // A name with no extension keeps its stem rather than losing characters.
       expect(
-        const StreamFile(name: 'noext', sizeBytes: 1, modified: 1).thumbName,
+        StreamFile(name: 'noext', sizeBytes: 1, modified: 1).thumbName,
         'noext.png',
       );
     });
@@ -349,9 +382,9 @@ void main() {
       // Names with no parseable timestamp fall back to mtime; equal mtimes must
       // still produce a deterministic order rather than shuffling per refresh.
       final files = [
-        const StreamFile(name: 'b.wav', sizeBytes: 0, modified: 500),
-        const StreamFile(name: 'a.wav', sizeBytes: 0, modified: 500),
-        const StreamFile(name: 'c.wav', sizeBytes: 0, modified: 500),
+        StreamFile(name: 'b.wav', sizeBytes: 0, modified: 500),
+        StreamFile(name: 'a.wav', sizeBytes: 0, modified: 500),
+        StreamFile(name: 'c.wav', sizeBytes: 0, modified: 500),
       ];
       files.sort((a, b) {
         final t = b.startTime.compareTo(a.startTime);

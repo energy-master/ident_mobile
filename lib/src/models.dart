@@ -207,7 +207,7 @@ class NotificationPage {
 /// One recording in a stream folder. `modified` is the server-side mtime in
 /// epoch seconds — the reliable time axis for the images page.
 class StreamFile {
-  const StreamFile({
+  StreamFile({
     required this.name,
     required this.sizeBytes,
     required this.modified,
@@ -245,7 +245,13 @@ class StreamFile {
   /// the recordings themselves. This is the single value used for BOTH ordering
   /// and display: sorting by mtime while showing filename times is what makes a
   /// correctly-sorted list look shuffled.
-  DateTime get startTime => recordingTime(name, modified);
+  ///
+  /// Parsed once and held, which is why this class is no longer const. As a
+  /// getter it re-ran the regex on every read, and the reads are not incidental:
+  /// sorting one folder costs O(n log n) of them — about 80,000 parses for a
+  /// 6,400-recording folder, on every refresh — and the thumbnail strip reads it
+  /// again for each cell it builds while scrolling.
+  late final DateTime startTime = recordingTime(name, modified);
 }
 
 /// One detection recorded against a recording.
@@ -344,6 +350,7 @@ class TrackPoint {
     this.cog,
     this.sog,
     this.n = 1,
+    this.fetchedAt,
   });
 
   final double lat;
@@ -359,7 +366,21 @@ class TrackPoint {
   final double? sog;
   final int n;
 
+  /// The server's own UTC stamp for this fix, as it stored it.
+  ///
+  /// Redundant with [time] to the second, and kept because it is what the
+  /// database actually holds: when a fix looks wrong, the string the operator
+  /// can quote back is worth more than a reformatted one.
+  final String? fetchedAt;
+
   DateTime get time => DateTime.fromMillisecondsSinceEpoch(t, isUtc: true);
+
+  /// True when the server merged repeat fixes here — the vessel held position.
+  bool get held => n > 1;
+
+  /// How long the vessel sat at this position, when the server said.
+  Duration? get heldFor =>
+      tLast == null ? null : Duration(milliseconds: tLast! - t);
 
   factory TrackPoint.fromJson(Map<String, dynamic> json) => TrackPoint(
         lat: _asDouble(json['lat']) ?? 0,
@@ -369,6 +390,9 @@ class TrackPoint {
         cog: _asDouble(json['cog']),
         sog: _asDouble(json['sog']),
         n: _asInt(json['n']) ?? 1,
+        fetchedAt: (json['fetched_at']?.toString().isEmpty ?? true)
+            ? null
+            : json['fetched_at'].toString(),
       );
 }
 
@@ -398,6 +422,12 @@ class Vessel {
 
   /// Moving vessels are the interesting ones; a single point means it sat still
   /// for the whole window.
+  ///
+  /// Weaker than the server's rule (`count >= 2 || any sog >= 0.5 kn`, see
+  /// `lib/ais_query.php`) on purpose: over a short window a moving vessel can
+  /// legitimately report one fix, and calling it moving on the strength of a
+  /// single speed reading would put a course arrow on a vessel whose direction
+  /// we cannot draw. One point means one dot.
   bool get isMoving => track.length >= 2;
 
   TrackPoint? get latest => track.isEmpty ? null : track.last;

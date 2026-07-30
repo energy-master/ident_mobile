@@ -6,6 +6,15 @@
 /// snapshot would answer "what is out there now", which tells you nothing about
 /// a detection from three days ago.
 ///
+/// **The history range exists because the framing has a floor.** The AIS poller
+/// logs a fix every half minute or so, and folders like `repmus25` are full of
+/// five-second recordings. Asked strictly, "who was here during those five
+/// seconds" returns at most one fix per vessel — no track, no course, no age —
+/// on a stretch of water that may have been busy. So the window can be widened,
+/// the header always says which range is in force, and the fixes that fall
+/// inside the recording itself keep a white ring so the original question is
+/// still answerable at a glance.
+///
 /// **Gesture handling.** This window lives inside a horizontally-swiping
 /// dashboard, so one-finger panning is deliberately disabled: dragging west and
 /// "go to the previous window" are the same gesture, and the map would eat every
@@ -15,41 +24,60 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
 
+import '../ais_map_geometry.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
+import 'ais_map.dart';
 
-/// Basemap: Esri's world ocean base.
+/// Fallback span for a recording whose duration could not be estimated.
+const _assumedDuration = Duration(minutes: 15);
+
+/// The span actually plotted, which in the wider ranges is not the recording's.
 ///
-/// Chosen over the web app's plain OSM street map because this is a marine
-/// tool: it carries bathymetry, so a vessel track reads against depth and
-/// seabed shape rather than against empty blue. Global coverage, so it works
-/// for Canadian waters where the US-only NOAA chart services do not. Note the
-/// {y}/{x} order — Esri's REST tile path is row-then-column, the reverse of the
-/// usual XYZ convention.
-const oceanTileUrl =
-    'https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}';
+/// Taken from the fixes themselves rather than from the query: `All` has no
+/// window to quote, and a windowed query returns whatever the poller happened to
+/// log inside it, which is usually narrower than what was asked for. Falls back
+/// to the recording's span when nothing came back, so the header still says
+/// which recording produced the empty answer.
+String aisSpanLabel(List<Vessel>? vessels, DateTime start, DateTime end) {
+  final all = [for (final v in vessels ?? const <Vessel>[]) ...v.track];
+  if (all.isEmpty) return formatTimeSpan(start, end);
 
-/// Place and feature labels for the ocean base, as a separate transparent layer.
-const oceanLabelsUrl =
-    'https://services.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}';
+  var first = all.first.t;
+  var last = all.first.t;
+  for (final p in all) {
+    if (p.t < first) first = p.t;
+    if (p.t > last) last = p.t;
+  }
+  final a = DateTime.fromMillisecondsSinceEpoch(first, isUtc: true);
+  final b = DateTime.fromMillisecondsSinceEpoch(last, isUtc: true);
 
-/// Seamarks — buoys, lights, channel markers — as a transparent overlay.
-///
-/// Community-run and sparse outside busy waters, so it is layered on top rather
-/// than relied on: where there is nothing to draw the tiles are simply empty.
-const seamarkTileUrl = 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png';
+  // Once the range crosses a day the time alone is ambiguous.
+  return b.difference(a).inHours >= 12
+      ? '${formatUtcShort(a)} – ${formatUtcShort(b)} UTC'
+      : formatTimeSpan(a, b);
+}
 
-const oceanAttribution = 'Esri, GEBCO, NOAA, National Geographic, and other contributors';
-const seamarkAttribution = '© OpenSeaMap contributors';
-
-/// Identifies this client to the tile servers, which OSM-family policies require.
-const tileUserAgent = 'ai.goident.mobile';
+/// What came back, and whether the map is drawing all of it.
+String aisCountLabel(List<Vessel>? vessels, AisHistory history) {
+  if (vessels == null) return 'Loading vessels…';
+  if (vessels.isEmpty) {
+    return history == AisHistory.all
+        ? 'No AIS logged for this sensor'
+        : 'No vessels logged in this range';
+  }
+  final moving = vessels.where((v) => v.isMoving).length;
+  // Silence about a cap would read as "this is everything".
+  final capped = vessels.length > maxDrawnVessels
+      ? ' · drawing the $maxDrawnVessels nearest'
+      : '';
+  return '${vessels.length} vessel${vessels.length == 1 ? '' : 's'} · '
+      '$moving moving$capped';
+}
 
 class AisPage extends ConsumerWidget {
   const AisPage({super.key, required this.stream});
@@ -69,22 +97,54 @@ class AisPage extends ConsumerWidget {
     // traffic that was never there while it was recording.
     final durationMs = ref.watch(fileDurationsProvider(stream))[active.name];
     final start = active.startTime;
-    final end = durationMs != null
-        ? start.add(Duration(milliseconds: durationMs))
-        : start.add(const Duration(minutes: 15));
+    final length = durationMs != null
+        ? Duration(milliseconds: durationMs)
+        : _assumedDuration;
+    final end = start.add(length);
 
+    final view = ref.watch(aisViewProvider(stream));
+
+    // Widen for a recording too short to hold a track, unless the operator has
+    // already made the choice themselves. Deferred out of build: writing to a
+    // provider mid-build is exactly the reentrancy Riverpod forbids.
+    final autoWiden = shouldAutoWiden(length) && !view.historyChosen;
+    if (autoWiden && view.history == AisHistory.recording) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref
+            .read(aisViewProvider(stream).notifier)
+            .setHistory(AisHistory.aroundRecording, byUser: false);
+      });
+    }
+
+    final q = aisQueryFor(view.history, start, end);
     final sensor = ref.watch(sensorProvider(stream)).valueOrNull;
-    final vessels = ref.watch(vesselsProvider((stream: stream, from: start, to: end)));
+    final vessels = ref.watch(
+      vesselsProvider((stream: stream, from: q.from, to: q.to, all: q.all)),
+    );
 
     return Column(
       children: [
-        _Header(start: start, end: end, vessels: vessels.valueOrNull),
+        _Header(
+          stream: stream,
+          start: start,
+          end: end,
+          length: length,
+          history: view.history,
+          autoWidened: autoWiden,
+          vessels: vessels.valueOrNull,
+        ),
         Expanded(
           child: switch (vessels) {
-            AsyncData(:final value) => _MapView(
+            AsyncData(:final value) => AisMap(
+                // Keyed by stream so swapping streams builds a fresh map rather
+                // than animating one sensor's camera to another's.
+                key: ValueKey(stream),
+                stream: stream,
                 vessels: value,
                 sensor: sensor,
-                interactive: false,
+                recordingStart: start,
+                recordingEnd: end,
+                fullScreen: false,
                 onExpand: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => _FullScreenMap(
@@ -100,7 +160,9 @@ class AisPage extends ConsumerWidget {
             AsyncError(:final error) => _Error(
                 message: '$error',
                 onRetry: () => ref.invalidate(
-                  vesselsProvider((stream: stream, from: start, to: end)),
+                  vesselsProvider(
+                    (stream: stream, from: q.from, to: q.to, all: q.all),
+                  ),
                 ),
               ),
             _ => const Center(child: CircularProgressIndicator()),
@@ -111,18 +173,28 @@ class AisPage extends ConsumerWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.start, required this.end, required this.vessels});
+/// What is loaded, over what span, and how to change it.
+class _Header extends ConsumerWidget {
+  const _Header({
+    required this.stream,
+    required this.start,
+    required this.end,
+    required this.length,
+    required this.history,
+    required this.autoWidened,
+    required this.vessels,
+  });
 
+  final String stream;
   final DateTime start;
   final DateTime end;
+  final Duration length;
+  final AisHistory history;
+  final bool autoWidened;
   final List<Vessel>? vessels;
 
   @override
-  Widget build(BuildContext context) {
-    final moving = vessels?.where((v) => v.isMoving).length;
-    final total = vessels?.length;
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
       decoration: const BoxDecoration(
@@ -133,7 +205,7 @@ class _Header extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            formatTimeSpan(start, end),
+            aisSpanLabel(vessels, start, end),
             style: const TextStyle(
               color: IdentColors.textPrimary,
               fontSize: 13,
@@ -142,225 +214,69 @@ class _Header extends StatelessWidget {
             ),
           ),
           Text(
-            total == null
-                ? 'Loading vessels…'
-                : total == 0
-                    ? 'No vessels logged during this recording'
-                    : '$total vessel${total == 1 ? '' : 's'} · $moving moving',
-            style: const TextStyle(color: IdentColors.textSecondary, fontSize: 11.5),
+            aisCountLabel(vessels, history),
+            style: const TextStyle(
+              color: IdentColors.textSecondary,
+              fontSize: 11.5,
+            ),
           ),
+          const SizedBox(height: 6),
+          _HistoryChips(stream: stream, history: history),
+          if (autoWidened)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Widened: a ${formatDuration(length)} recording is shorter '
+                'than one AIS report.',
+                style: const TextStyle(
+                  color: IdentColors.warn,
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _MapView extends StatelessWidget {
-  const _MapView({
-    required this.vessels,
-    required this.sensor,
-    required this.interactive,
-    this.onExpand,
-  });
+class _HistoryChips extends ConsumerWidget {
+  const _HistoryChips({required this.stream, required this.history});
 
-  final List<Vessel> vessels;
-  final Sensor? sensor;
+  final String stream;
+  final AisHistory history;
 
-  /// When false, one-finger drag is left to the dashboard's page swipe.
-  final bool interactive;
-
-  final VoidCallback? onExpand;
-
-  /// Frame the sensor if there is one, else the vessels, else a world view.
-  LatLng get _centre {
-    if (sensor != null && sensor!.hasPosition) {
-      return LatLng(sensor!.latitude!, sensor!.longitude!);
-    }
-    final points = vessels.expand((v) => v.track).toList();
-    if (points.isEmpty) return const LatLng(0, 0);
-    final lat = points.map((p) => p.lat).reduce((a, b) => a + b) / points.length;
-    final lng = points.map((p) => p.lng).reduce((a, b) => a + b) / points.length;
-    return LatLng(lat, lng);
-  }
+  static const _labels = {
+    AisHistory.recording: 'Recording',
+    AisHistory.aroundRecording: '±1 h',
+    AisHistory.all: 'All',
+  };
 
   @override
-  Widget build(BuildContext context) {
-    return Stack(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Wrap(
+      spacing: 6,
       children: [
-        FlutterMap(
-          options: MapOptions(
-            initialCenter: _centre,
-            initialZoom: 11,
-            interactionOptions: InteractionOptions(
-              // Dropping `drag` is what lets a one-finger horizontal swipe reach
-              // the dashboard's PageView instead of panning the map. Two-finger
-              // gestures stay, and the expand button gives a map with everything
-              // enabled.
-              flags: interactive
-                  ? InteractiveFlag.all
-                  : InteractiveFlag.pinchZoom |
-                      InteractiveFlag.pinchMove |
-                      InteractiveFlag.doubleTapZoom,
+        for (final entry in _labels.entries)
+          ChoiceChip(
+            label: Text(entry.value),
+            selected: history == entry.key,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            labelStyle: TextStyle(
+              fontSize: 11,
+              color: history == entry.key
+                  ? IdentColors.shell
+                  : IdentColors.textSecondary,
             ),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: oceanTileUrl,
-              userAgentPackageName: tileUserAgent,
-            ),
-            // Overlay layers: flutter_map 8 paints no background of its own, so
-            // these sit transparently over the basemap.
-            TileLayer(
-              urlTemplate: oceanLabelsUrl,
-              userAgentPackageName: tileUserAgent,
-            ),
-            TileLayer(
-              urlTemplate: seamarkTileUrl,
-              userAgentPackageName: tileUserAgent,
-              // Seamark coverage is patchy; a missing tile is normal and must
-              // not paint an error square over the chart.
-              errorTileCallback: (_, _, _) {},
-            ),
-            // Tracks under markers, so a dot is never hidden by a line.
-            PolylineLayer(
-              polylines: [
-                for (final v in vessels)
-                  if (v.track.length >= 2)
-                    Polyline(
-                      points: [for (final p in v.track) LatLng(p.lat, p.lng)],
-                      strokeWidth: 2,
-                      color: IdentColors.accent.withValues(alpha: 0.75),
-                    ),
-              ],
-            ),
-            MarkerLayer(
-              markers: [
-                for (final v in vessels)
-                  if (v.latest != null)
-                    Marker(
-                      point: LatLng(v.latest!.lat, v.latest!.lng),
-                      width: 26,
-                      height: 26,
-                      child: _VesselMarker(vessel: v),
-                    ),
-                if (sensor != null && sensor!.hasPosition)
-                  Marker(
-                    point: LatLng(sensor!.latitude!, sensor!.longitude!),
-                    width: 30,
-                    height: 30,
-                    child: const _SensorMarker(),
-                  ),
-              ],
-            ),
-            const RichAttributionWidget(
-              attributions: [
-                TextSourceAttribution(oceanAttribution),
-                TextSourceAttribution(seamarkAttribution),
-              ],
-            ),
-          ],
-        ),
-        if (!interactive)
-          Positioned(
-            top: 8,
-            right: 8,
-            child: Column(
-              children: [
-                _MapButton(icon: Icons.open_in_full, tooltip: 'Full screen map', onTap: onExpand),
-                const SizedBox(height: 6),
-                const _TwoFingerHint(),
-              ],
-            ),
+            selectedColor: IdentColors.accent,
+            backgroundColor: IdentColors.surfaceRaised,
+            side: BorderSide.none,
+            showCheckmark: false,
+            onSelected: (_) =>
+                ref.read(aisViewProvider(stream).notifier).setHistory(entry.key),
           ),
       ],
-    );
-  }
-}
-
-/// Says why one finger doesn't pan, rather than letting it feel broken.
-class _TwoFingerHint extends StatelessWidget {
-  const _TwoFingerHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: IdentColors.shell.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: const Text(
-        'Two fingers to move',
-        style: TextStyle(color: IdentColors.textSecondary, fontSize: 10.5),
-      ),
-    );
-  }
-}
-
-class _MapButton extends StatelessWidget {
-  const _MapButton({required this.icon, required this.tooltip, required this.onTap});
-
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: IdentColors.shell.withValues(alpha: 0.78),
-      borderRadius: BorderRadius.circular(6),
-      child: IconButton(
-        icon: Icon(icon, size: 18),
-        color: IdentColors.textPrimary,
-        tooltip: tooltip,
-        visualDensity: VisualDensity.compact,
-        onPressed: onTap,
-      ),
-    );
-  }
-}
-
-class _VesselMarker extends StatelessWidget {
-  const _VesselMarker({required this.vessel});
-
-  final Vessel vessel;
-
-  @override
-  Widget build(BuildContext context) {
-    // Moving vessels are what an operator is looking for; moored ones are
-    // context. Distinguishing them keeps a busy anchorage readable.
-    final colour = vessel.isMoving ? IdentColors.warn : IdentColors.idle;
-
-    return Tooltip(
-      message: [
-        vessel.label,
-        if (vessel.type != null) vessel.type!,
-        if (vessel.latest?.sog != null) '${vessel.latest!.sog!.toStringAsFixed(1)} kn',
-      ].join(' · '),
-      child: Icon(
-        vessel.isMoving ? Icons.navigation : Icons.circle,
-        size: vessel.isMoving ? 18 : 10,
-        color: colour,
-        // Point the arrow along the course when it is known.
-        shadows: const [Shadow(color: Colors.black54, blurRadius: 3)],
-      ),
-    );
-  }
-}
-
-class _SensorMarker extends StatelessWidget {
-  const _SensorMarker();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Tooltip(
-      message: 'Hydrophone',
-      child: Icon(
-        Icons.graphic_eq,
-        size: 22,
-        color: IdentColors.ok,
-        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
-      ),
     );
   }
 }
@@ -390,7 +306,14 @@ class _FullScreenMap extends StatelessWidget {
           style: const TextStyle(fontSize: 13),
         ),
       ),
-      body: _MapView(vessels: vessels, sensor: sensor, interactive: true),
+      body: AisMap(
+        stream: stream,
+        vessels: vessels,
+        sensor: sensor,
+        recordingStart: start,
+        recordingEnd: end,
+        fullScreen: true,
+      ),
     );
   }
 }
