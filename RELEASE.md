@@ -91,9 +91,15 @@ duplicate outright.
 
 ```sh
 flutter pub get          # picks up the new url_launcher dependency
-cd ios && pod install && cd ..
 flutter build ipa --release
 ```
+
+No `pod install` step, and running one by hand fails on a fresh clone with
+`[!] No 'Podfile' found in the project directory`. The Podfile is generated, not
+committed — `flutter build ipa` writes it if it is missing, then runs
+`pod install` itself, then archives. To get the Podfile and the xcconfig without
+a full build, so the workspace can be opened first, use
+`flutter build ios --config-only`.
 
 Then open `build/ios/archive/Runner.xcarchive` in Xcode → **Distribute App**.
 (Or `flutter build ipa` then upload `build/ios/ipa/*.ipa` with the **Transporter**
