@@ -16,14 +16,24 @@ same binary, same review, no expiry.
 
 ### 1. Apple Developer Program
 
-Enrol at <https://developer.apple.com/programs/> — £79/$99 a year.
+Already enrolled, as an **Individual**. Nothing blocks the first build.
 
-Enrol as an **Organization**, not an Individual. Individual enrolment puts your
-personal name on everything a client sees; Organization puts Vixen
-Intelligence there. It needs a **D-U-N-S number** for the company, which is free
-but can take up to two weeks to issue, and Apple verifies the legal entity by
-phone. **Start this first** — it is the long pole, and nothing else can proceed
-without it.
+The one consequence to be aware of: on an Individual account the developer name
+is fixed to your legal name, and the option to set a trade name is not offered —
+it exists only for Organization accounts. So clients installing from TestFlight
+see the app published by **Rahul Tandon**, not Vixen Intelligence.
+
+For a pilot that is cosmetic. It stops being cosmetic if the app ever becomes a
+listed or unlisted App Store product, where the seller name sits on the product
+page. Converting is possible but not self-service: the Team Agent contacts Apple
+Developer Support (Contact Us → *Membership and Account* → *Organization Name
+Change*) and supplies a company D-U-N-S number, which is free but can take up to
+two weeks to issue. Existing apps and the Team ID carry over.
+
+If Vixen Intelligence is the name that should be on this in front of clients,
+start the conversion now and keep shipping TestFlight builds under the
+individual account while it runs — the two do not block each other. If the
+personal name is fine for a pilot, do nothing.
 
 ### 2. Bundle ID
 
@@ -39,6 +49,8 @@ Create it at <https://appstoreconnect.apple.com> → Apps → +.
 
 - **Name** — must be unique across the entire App Store. "IDent Dynamics" is
   probably free; check before committing, because renaming later is friction.
+  This is the app name, and is separate from the developer name discussed
+  above — the app can be called IDent Dynamics regardless of account type.
 - **Bundle ID** — `com.vixenintelligence.identMobile`
 - **SKU** — any internal string, e.g. `ident-mobile-ios`
 - **Primary language** — English (UK)
