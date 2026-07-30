@@ -50,6 +50,49 @@ title bar, mirroring the SPA chrome.
 
 Not in v1.0: live WebGL render, audio playback.
 
+## Where this app points
+
+The sign-in screen asks for an **IDent Dynamics site address** — the same URL the
+web app is served from, `https://goident.ai` for the hosted install. It is not a
+Brahma address, and the distinction matters enough to be worth stating plainly,
+because the product story ("run the framework on your own server and point the
+apps at it") describes a seam one tier further back than this field.
+
+Three tiers, and only the middle one has an address a client types:
+
+```
+   this app  ─┐
+              ├─▶  IDent Dynamics site  ─▶  Brahma framework host
+   web SPA   ─┘    (PHP API + MySQL)        (brahma serve, :8787)
+                            ▲                        │
+                            └──── shared MySQL ──────┘
+```
+
+**Why not point straight at Brahma.** Almost nothing this app renders exists on
+the framework host. Identity and tokens (`ident_users`, `ident_api_tokens`),
+which streams an account may see at all (`ident_user_streams`), detections,
+notifications, favourites, sensors and AIS tracks all live in the IDent MySQL
+database and are served by `api/idapi/*.php`. Of the endpoints this app calls,
+only the file listing, the WAV proxy and the spectrogram snapshots reach through
+to the framework, and each is proxied so the request can be permission-checked
+first. `brahma serve` itself authenticates with a *single shared bearer token*
+that the site holds in `config.php`; it has no users and no per-user grants, so a
+handset talking to it directly would either need that shared secret — which
+grants everything on that box, including submitting training runs — or the
+framework would have to grow a tenancy model it deliberately does not have.
+
+**What self-hosting actually is.** A client deploys the IDent Dynamics tier
+(PHP + MySQL) and a Brahma host, and points the former at the latter with
+`brahma.endpoint` and `brahma.token` in `config.php`. Both clients then use the
+one site address, and neither app changes. Swapping the framework — for a
+client's own host, or per-stream for an edge daemon via `ident_stream_edges` — is
+a config change on the site, invisible to this app.
+
+That single address is also what keeps the two clients honest: `api/*.php` serves
+the browser and `api/idapi/*.php` serves this app, over the same database and in
+places the same query engine (`lib/ais_query.php` answers both), so the two
+surfaces cannot drift apart.
+
 ## Architecture
 
 ```

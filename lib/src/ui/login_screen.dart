@@ -1,9 +1,15 @@
 /// Sign-in.
 ///
-/// Trades credentials for a bearer token via `api/idapi/login.php`. The server
-/// URL is editable but prefilled, because most users are on the hosted install
-/// and should never have to think about it; the field exists for self-hosted
-/// and subdirectory deployments, which auth.php supports.
+/// Trades credentials for a bearer token via `api/idapi/login.php`. The address
+/// is editable but prefilled, because most users are on the hosted install and
+/// should never have to think about it; the field exists for self-hosted and
+/// subdirectory deployments, which auth.php supports.
+///
+/// It asks for the **IDent Dynamics site**, not a Brahma address — the same URL
+/// the web app is served from. That distinction is worth the longer label: the
+/// framework runs on its own host and the site is configured against it, but
+/// nothing a client renders comes from the framework directly. See the
+/// "Where this app points" section of the README.
 library;
 
 import 'dart:io' show Platform;
@@ -183,14 +189,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       TextFormField(
                         controller: _baseUrl,
                         decoration: const InputDecoration(
-                          labelText: 'Server',
+                          labelText: 'IDent site address',
                           prefixIcon: Icon(Icons.dns_outlined),
-                          helperText: 'Only change this for a self-hosted install',
+                          helperText:
+                              'Your IDent Dynamics site — the same address as its web app',
                         ),
                         keyboardType: TextInputType.url,
                         autocorrect: false,
                         validator: (v) =>
-                            (v == null || v.trim().isEmpty) ? 'Enter the server address' : null,
+                            (v == null || v.trim().isEmpty) ? 'Enter your IDent site address' : null,
                       ),
                     ],
 
@@ -218,7 +225,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 8),
                       TextButton(
                         onPressed: () => setState(() => _showServerField = true),
-                        child: const Text('Use a different server'),
+                        child: const Text('Use a different IDent site'),
                       ),
                     ],
                   ],
