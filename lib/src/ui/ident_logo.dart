@@ -18,6 +18,13 @@ class IdentLogo extends StatelessWidget {
   /// 1 matches the app-bar size; raise it for splash-sized use.
   final double scale;
 
+  /// The wordmark's laid-out height, from the two line boxes below.
+  ///
+  /// Exists so [IdentLockup] can size the divider without measuring: an
+  /// `IntrinsicHeight` would have to interrogate the company logo, whose
+  /// intrinsic size is zero until the bytes arrive over the network.
+  static double heightFor(double scale) => (15 * 1.05 + 9 * 1.1) * scale;
+
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -117,27 +124,32 @@ class IdentLockup extends StatelessWidget {
     // 0.6rem against the wordmark's 1.35rem, either side of the rule.
     final gap = 10.0 * scale;
 
-    return IntrinsicHeight(
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        // `align-items: stretch`, so the divider spans the wordmark; the glyph
-        // beside it is pulled back to the top below.
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Align(alignment: Alignment.centerLeft, child: IdentLogo(scale: scale)),
-          SizedBox(width: gap),
-          // currentColor at 0.45 — the rule is the wordmark's own green, not a
-          // neutral divider. A hairline at every scale, as in the CSS.
-          Container(width: 1, color: identGreen.withValues(alpha: 0.45)),
-          SizedBox(width: gap),
-          Align(
-            // `align-self: flex-start`: the closing glyph sits in line with
-            // "IDent" rather than floating against the middle of the wordmark.
-            alignment: Alignment.topLeft,
-            child: mark ?? IdentPhi(scale: scale),
-          ),
-        ],
-      ),
+    // Everything top-aligned, which is `align-self: flex-start` on the closing
+    // glyph: it sits in line with "IDent" rather than floating against the
+    // middle of the wordmark.
+    //
+    // Deliberately not IntrinsicHeight + `align-items: stretch`, the faithful
+    // translation of the CSS. That makes the row's height depend on the
+    // intrinsic height of every child, and a company logo is an `Image.network`
+    // whose intrinsic height is zero until the bytes land — so the row collapses
+    // around a mark that has not arrived yet. The divider spans the wordmark,
+    // which is a height known without measuring anything.
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        IdentLogo(scale: scale),
+        SizedBox(width: gap),
+        // currentColor at 0.45 — the rule is the wordmark's own green, not a
+        // neutral divider. A hairline at every scale, as in the CSS.
+        SizedBox(
+          width: 1,
+          height: IdentLogo.heightFor(scale),
+          child: ColoredBox(color: identGreen.withValues(alpha: 0.45)),
+        ),
+        SizedBox(width: gap),
+        mark ?? IdentPhi(scale: scale),
+      ],
     );
   }
 }
