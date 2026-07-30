@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../api_client.dart';
 import '../providers.dart';
@@ -362,6 +363,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           child: const Text('Use the standard IDent site'),
                         ),
                       ],
+
+                      const SizedBox(height: 20),
+                      _PrivacyLink(baseUrl: _baseUrl),
                     ],
                   ),
                 ),
@@ -370,6 +374,50 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The signed-in site's privacy policy, opened in the browser.
+///
+/// App Store review wants the policy reachable from inside the app, not only
+/// from the App Store Connect metadata field, and the sign-in screen is the only
+/// place every user passes through.
+///
+/// The URL is built from whatever site is in the field rather than hardcoded to
+/// the hosted install: on a self-hosted deployment it is that operator, not
+/// Vixen, who holds the user's data, and `privacy.php` is part of the site the
+/// app is signing into.
+class _PrivacyLink extends StatelessWidget {
+  const _PrivacyLink({required this.baseUrl});
+
+  /// The live controller, not its text: the address can be edited after this
+  /// widget builds, and the policy that matters is the one for the site the
+  /// user is about to sign into.
+  final TextEditingController baseUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: () async {
+        final typed = baseUrl.text.trim();
+        final base = ApiClient.normaliseBaseUrl(
+          typed.isEmpty ? _defaultBaseUrl : typed,
+        );
+        final uri = Uri.tryParse('$base/privacy.php');
+        if (uri == null) return;
+        // Silent on failure — `launchUrl` throws when no handler is registered,
+        // and a policy that will not open is not worth an error banner on the
+        // screen someone is trying to sign in from.
+        try {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (_) {}
+      },
+      style: TextButton.styleFrom(
+        foregroundColor: IdentColors.textSecondary,
+        textStyle: const TextStyle(fontSize: 12),
+      ),
+      child: const Text('Privacy policy'),
     );
   }
 }

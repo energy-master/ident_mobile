@@ -1,0 +1,180 @@
+# Shipping to iOS clients via TestFlight
+
+The route chosen for v1.0 is **TestFlight external testing**: clients install
+the real app from a link, without a public App Store listing. It still goes
+through Apple's Beta App Review, so most of the App Store bar applies.
+
+What TestFlight costs you against a full listing: **builds expire 90 days after
+upload**, so a long-lived client deployment means re-uploading quarterly. What it
+saves you: no screenshots, no marketing copy, no App Store product page. If
+clients are still on it in six months, move to an unlisted App Store listing —
+same binary, same review, no expiry.
+
+---
+
+## One-time setup
+
+### 1. Apple Developer Program
+
+Enrol at <https://developer.apple.com/programs/> — £79/$99 a year.
+
+Enrol as an **Organization**, not an Individual. Individual enrolment puts your
+personal name on everything a client sees; Organization puts Vixen
+Intelligence there. It needs a **D-U-N-S number** for the company, which is free
+but can take up to two weeks to issue, and Apple verifies the legal entity by
+phone. **Start this first** — it is the long pole, and nothing else can proceed
+without it.
+
+### 2. Bundle ID
+
+Already set to `com.vixenintelligence.identMobile`
+(`ios/Runner.xcodeproj/project.pbxproj`). Register it under Certificates,
+Identifiers & Profiles, or let Xcode register it for you the first time you
+archive with automatic signing. No capabilities need enabling — the app has no
+push, no background modes, no App Groups.
+
+### 3. App record in App Store Connect
+
+Create it at <https://appstoreconnect.apple.com> → Apps → +.
+
+- **Name** — must be unique across the entire App Store. "IDent Dynamics" is
+  probably free; check before committing, because renaming later is friction.
+- **Bundle ID** — `com.vixenintelligence.identMobile`
+- **SKU** — any internal string, e.g. `ident-mobile-ios`
+- **Primary language** — English (UK)
+
+### 4. App Privacy questionnaire
+
+Under the app's **App Privacy** section. What this app actually collects:
+
+| Data type | Collected | Linked to identity | Purpose |
+|---|---|---|---|
+| Email address / user ID | Yes | Yes | App Functionality |
+| Precise location | **No** — sensor and AIS positions come from the server; the device's own location is never read | — | — |
+| Usage / diagnostics | No | — | — |
+
+The app requests no runtime permissions at all, which keeps this section short
+and keeps the "privacy nutrition label" clean.
+
+### 5. Privacy policy
+
+Required both in App Store Connect metadata and reachable from inside the app.
+
+- Metadata URL: `https://goident.ai/privacy.php` (verified live)
+- In-app: a **Privacy policy** link now sits at the foot of the sign-in screen.
+  It targets whichever site is in the address field, so self-hosted deployments
+  point at their own operator's policy rather than Vixen's.
+
+---
+
+## Per build
+
+### Version and build number
+
+`pubspec.yaml` → `version: 1.0.0+1`. The `+N` build number **must increase on
+every upload**, even for a re-upload of an identical binary. Apple rejects a
+duplicate outright.
+
+### Archive and upload (on the Mac)
+
+```sh
+flutter pub get          # picks up the new url_launcher dependency
+cd ios && pod install && cd ..
+flutter build ipa --release
+```
+
+Then either open `build/ios/archive/Runner.xcarchive` in Xcode → **Distribute
+App** → **TestFlight & App Store**, or upload the IPA in `build/ios/ipa/` with
+the **Transporter** app from the Mac App Store.
+
+Processing in App Store Connect takes roughly 5–30 minutes before the build
+appears under TestFlight.
+
+### Beta App Review
+
+Only the **first** build for external testing gets a full review; later builds of
+the same version usually go straight through. Turnaround is typically under 48
+hours.
+
+Fill in, under TestFlight → Test Information:
+
+- **Beta App Description** — what the app is for.
+- **Feedback email** — reaches a real inbox.
+- **Beta App Review Information** — contact name, phone, email, **and a demo
+  account**.
+
+### The demo account is the thing most likely to fail you
+
+The app is unusable without a sign-in, so the reviewer gets nowhere without
+working credentials. Create a real `goident.ai` account that is **subscribed to
+a stream with actual recent data** — an account with an empty streams list looks
+like a broken app, and gets rejected as such.
+
+Put this in the review notes verbatim:
+
+> Sign in with the username and password above. Leave the "IDent Dynamics site
+> address" field at its default, `https://goident.ai` — it is only editable for
+> customers who self-host the server, and does not need to be changed to review
+> the app. After signing in, tap the first stream card to reach the dashboard;
+> the four windows (Live images, AIS, Decisions, Notifications) are swiped
+> between.
+
+That last paragraph matters. A reviewer who sees an editable server field and no
+explanation may read the app as a shell for arbitrary remote content, which is a
+guideline 4.2 rejection.
+
+### Adding testers
+
+External testers, up to 10,000: add a group, add emails or enable the **public
+link**. A public link is the least friction for clients — no email round-trip,
+they just tap it and install TestFlight.
+
+---
+
+## Known risks, in the order they are likely to bite
+
+1. **iPad.** `TARGETED_DEVICE_FAMILY = "1,2"` ships this as a universal app, so
+   Apple reviews it on iPad too, and a layout that breaks there is a rejection.
+   If the app has not actually been exercised on an iPad, set the target to
+   `"1"` (iPhone only) before the first submission and add iPad back once it has
+   been tested. This is the single cheapest risk to remove.
+
+2. **Account deletion.** Guideline 5.1.1(v) requires in-app account deletion for
+   apps that *create* accounts. This app does not — accounts are created on the
+   web — so it is arguably exempt, but reviewers flag it often enough that a
+   link to the account page is cheap insurance if it comes up.
+
+3. **Cleartext HTTP.** App Transport Security blocks `http://` by default and
+   this app ships no exemption, which is the right call for review. The
+   consequence is that a self-hosted client on a plain-HTTP install cannot
+   connect. They need TLS. Do not add an ATS exception to work around it —
+   Apple demands a justification for one and "our customer has no certificate"
+   is not accepted.
+
+4. **Map tile terms.** The basemap comes from Esri/ArcGIS and OpenSeaMap. This
+   is a commercial product, so check both providers' terms actually permit that
+   use. It will not block review — Apple does not check — but it is a live
+   business exposure. Attribution is already rendered on the map.
+
+5. **Export compliance.** `ITSAppUsesNonExemptEncryption` is set to `false` in
+   `Info.plist`, which stops App Store Connect asking on every single upload.
+   That declaration is correct for an app whose only cryptography is HTTPS and
+   the iOS Keychain, which is the case here — but it is a legal declaration, so
+   satisfy yourself it stays true if crypto is ever added.
+
+---
+
+## Branding assets
+
+The launcher icon and launch screen are generated, not hand-dropped, by
+`tool/generate_icons.py`. The icon is the **φ** from the web lockup
+(`.logo-phi`), in the wordmark green on the app shell, over range rings that
+echo the AIS chart. Rerun after any brand change:
+
+```sh
+python3 tool/generate_icons.py
+```
+
+It rewrites all 15 iOS icon sizes, the three launch images, and the five Android
+mipmaps from one definition, so the sizes cannot drift apart. The iOS 1024px
+marketing icon it produces has no alpha channel, which Apple requires.

@@ -45,6 +45,10 @@ dependencies:
   flutter_cache_manager: ^3.4.2
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
+  # Opens the signed-in site's privacy policy in the browser. App Store review
+  # requires the policy be reachable from inside the app, not only from the
+  # App Store Connect metadata field.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Per-machine Claude Code tool permissions — paths and allowances that only make
+# sense on the machine that granted them.
+.claude/settings.local.json
