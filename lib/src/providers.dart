@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'ais_map_geometry.dart' show AisHistory, liveRefreshInterval;
 import 'api_client.dart';
+import 'recent_sign_ins.dart';
 import 'auth.dart';
 import 'file_duration.dart';
 import 'models.dart';
@@ -394,6 +395,65 @@ class FavouritesNotifier extends StateNotifier<AsyncValue<Set<String>>> {
 final favouritesProvider = StateNotifierProvider.autoDispose
     .family<FavouritesNotifier, AsyncValue<Set<String>>, String>(
   (ref, folder) => FavouritesNotifier(ref, folder),
+);
+
+/// The site addresses and usernames this device has signed in with before.
+///
+/// Shaped like [FavouritesNotifier] — load in the constructor, guard every write
+/// with `mounted` — with two deliberate differences:
+///
+///   * plain state rather than `AsyncValue`, because there is no loading or
+///     error worth rendering. An unreadable keystore means "no suggestions
+///     yet", which is indistinguishable from a first run and needs no UI.
+///   * optimistic writes with **no rollback**. Favourites reconcile against a
+///     server that is the real source of truth; here the keystore is only a
+///     cache of what the user demonstrably just did, so a failed write must not
+///     retract a value from a sign-in that actually happened.
+class RecentSignInsNotifier extends StateNotifier<RecentSignIns> {
+  RecentSignInsNotifier([RecentSignInStore? store])
+      : _store = store ?? RecentSignInStore(),
+        super(RecentSignIns.empty) {
+    _load();
+  }
+
+  final RecentSignInStore _store;
+
+  Future<void> _load() async {
+    final loaded = await _store.read();
+    if (mounted) state = loaded;
+  }
+
+  Future<void> recordSite(String raw) => _update(state.sites.used(raw));
+  Future<void> recordUsername(String raw) => _update(state.usernames.used(raw));
+  Future<void> forgetSite(String value) => _update(state.sites.forget(value));
+  Future<void> forgetUsername(String value) => _update(state.usernames.forget(value));
+
+  /// Apply one list's new value, skipping the write when nothing moved —
+  /// `RecentValues.used` returns the same instance for a site that is already
+  /// at the front, which is the common case of signing in to the same place
+  /// again.
+  Future<void> _update(RecentValues next) async {
+    final current = next.kind == RecentKind.site ? state.sites : state.usernames;
+    if (identical(next, current)) return;
+
+    if (mounted) {
+      state = next.kind == RecentKind.site
+          ? state.copyWith(sites: next)
+          : state.copyWith(usernames: next);
+    }
+    await _store.write(next);
+  }
+}
+
+/// Deliberately **not** autoDispose.
+///
+/// The sign-in screen is its only listener and is torn down the instant sign-in
+/// succeeds — which is exactly when the recording call runs. An autoDispose
+/// provider would be disposed with the screen and the `state =` inside
+/// [RecentSignInsNotifier] would throw on the one path that must work.
+final recentSignInsProvider =
+    StateNotifierProvider<RecentSignInsNotifier, RecentSignIns>(
+  (ref) => RecentSignInsNotifier(),
 );
 
 /// Paged notification list for one stream (or all streams when [stream] is null).

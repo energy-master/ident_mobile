@@ -93,6 +93,13 @@ class AuthStore {
 
   /// Clear the token but keep the server URL, so a user signing back in on the
   /// same install does not have to retype it.
+  ///
+  /// Deliberately deletes named keys rather than calling `deleteAll()`. The same
+  /// keystore also holds `ident.recent_sites` and `ident.recent_usernames`
+  /// (`recent_sign_ins.dart`), which survive a sign-out on purpose — signing out
+  /// is not the same as saying "forget this device", and forgetting an entry is
+  /// its own per-entry action on the sign-in screen. `deleteAll()` would wipe
+  /// them, and would do it silently.
   Future<String?> clear() async {
     final baseUrl = await _storage.read(key: _kBaseUrl);
     await _storage.delete(key: _kToken);

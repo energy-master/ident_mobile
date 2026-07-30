@@ -77,7 +77,10 @@ class ApiClient {
   static String normaliseBaseUrl(String raw) {
     var s = raw.trim();
     if (s.isEmpty) return s;
-    if (!s.startsWith('http://') && !s.startsWith('https://')) {
+    // Case-insensitively, because schemes are case-insensitive by RFC 3986 and
+    // "HTTPS://" is a real thing people paste. Matching only lower case turned
+    // it into "https://HTTPS://host", which then fails to resolve.
+    if (!_hasHttpScheme.hasMatch(s)) {
       s = 'https://$s';
     }
     while (s.endsWith('/')) {
@@ -85,6 +88,8 @@ class ApiClient {
     }
     return s;
   }
+
+  static final _hasHttpScheme = RegExp(r'^https?://', caseSensitive: false);
 
   Uri _uri(String path, [Map<String, String>? query]) {
     final base = Uri.parse(baseUrl);
