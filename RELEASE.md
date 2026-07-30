@@ -188,11 +188,16 @@ they just tap it and install TestFlight.
 
 ## Known risks, in the order they are likely to bite
 
-1. **iPad.** `TARGETED_DEVICE_FAMILY = "1,2"` ships this as a universal app, so
-   Apple reviews it on iPad too, and a layout that breaks there is a rejection.
-   If the app has not actually been exercised on an iPad, set the target to
-   `"1"` (iPhone only) before the first submission and add iPad back once it has
-   been tested. This is the single cheapest risk to remove.
+1. **iPad — settled.** `TARGETED_DEVICE_FAMILY` is now `1`, iPhone only, because
+   the app has never been run on an iPad and Apple reviews whatever you declare.
+   A layout that breaks there costs a whole review cycle.
+
+   This is reversible in one line, and worth revisiting: a marine monitoring app
+   on a vessel is a plausible iPad case. Add iPad back by setting the value to
+   `"1,2"` in all three build configurations, *after* exercising the dashboard
+   on an iPad simulator — the four-window ring and the thumbnail strip are the
+   parts that adapt to size, so they are where it would break. The iPad icon
+   sizes are still in the asset catalogue and do not need regenerating.
 
 2. **Account deletion.** Guideline 5.1.1(v) requires in-app account deletion for
    apps that *create* accounts. This app does not — accounts are created on the
