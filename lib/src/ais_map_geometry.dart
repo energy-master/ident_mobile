@@ -382,20 +382,50 @@ enum AisHistory {
 
   /// Every fix the poller has logged for this sensor.
   all,
+
+  /// The last hour, up to now, refreshed as time passes.
+  ///
+  /// The one range that has nothing to do with the selected recording: it
+  /// answers "what is out there right now", which is a different question from
+  /// the rest of the page and is why it says `Live` rather than a duration.
+  live,
 }
 
 /// How far [AisHistory.aroundRecording] widens the window at each end.
 const aroundRecordingPadding = Duration(hours: 1);
 
+/// How much history [AisHistory.live] carries behind the present moment.
+///
+/// Long enough for a track — the poller logs a fix every half minute or so, so
+/// an hour is roughly a hundred of them — and short enough that the chart shows
+/// today's traffic rather than a day's accumulated clutter.
+const liveWindow = Duration(hours: 1);
+
+/// How often the live range asks the server again.
+const liveRefreshInterval = Duration(minutes: 1);
+
 /// Below this, a recording is too short to contain a track and the map widens.
 const autoWidenBelow = Duration(minutes: 2);
 
+/// [t] with its seconds discarded.
+///
+/// The live window ends on a whole minute rather than on the current instant so
+/// its query is stable between refreshes. Without this every rebuild would
+/// produce a slightly different window, and since the query is the provider's
+/// cache key, every rebuild would be a fresh round trip.
+DateTime floorToMinute(DateTime t) =>
+    DateTime.utc(t.year, t.month, t.day, t.hour, t.minute);
+
 /// The query for a history mode over a recording running [start] to [end].
+///
+/// [now] is only read by [AisHistory.live]; it is a parameter rather than a
+/// clock call so the window a given moment produces can be tested.
 ({DateTime? from, DateTime? to, bool all}) aisQueryFor(
   AisHistory history,
   DateTime start,
-  DateTime end,
-) =>
+  DateTime end, {
+  DateTime? now,
+}) =>
     switch (history) {
       // `from`/`to` are dropped in all mode rather than sent and ignored, so
       // the request and the provider's cache key both say what they mean.
@@ -406,7 +436,13 @@ const autoWidenBelow = Duration(minutes: 2);
           to: end.add(aroundRecordingPadding),
           all: false,
         ),
+      AisHistory.live => _liveQuery(now ?? DateTime.now().toUtc()),
     };
+
+({DateTime? from, DateTime? to, bool all}) _liveQuery(DateTime now) {
+  final to = floorToMinute(now.toUtc());
+  return (from: to.subtract(liveWindow), to: to, all: false);
+}
 
 /// Whether a recording of [length] is too short to plot a track from.
 bool shouldAutoWiden(Duration length) => length < autoWidenBelow;

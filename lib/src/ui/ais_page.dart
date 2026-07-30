@@ -43,9 +43,13 @@ const _assumedDuration = Duration(minutes: 15);
 /// log inside it, which is usually narrower than what was asked for. Falls back
 /// to the recording's span when nothing came back, so the header still says
 /// which recording produced the empty answer.
+/// The date is always carried, because this page is as often used on archive
+/// material as on today's traffic: a bare `13:24:08 – 13:29:08` invites the
+/// reader to assume it means today, and the whole point of the window is that it
+/// usually does not.
 String aisSpanLabel(List<Vessel>? vessels, DateTime start, DateTime end) {
   final all = [for (final v in vessels ?? const <Vessel>[]) ...v.track];
-  if (all.isEmpty) return formatTimeSpan(start, end);
+  if (all.isEmpty) return '${formatUtcDate(start)} · ${formatTimeSpan(start, end)}';
 
   var first = all.first.t;
   var last = all.first.t;
@@ -56,19 +60,23 @@ String aisSpanLabel(List<Vessel>? vessels, DateTime start, DateTime end) {
   final a = DateTime.fromMillisecondsSinceEpoch(first, isUtc: true);
   final b = DateTime.fromMillisecondsSinceEpoch(last, isUtc: true);
 
-  // Once the range crosses a day the time alone is ambiguous.
-  return b.difference(a).inHours >= 12
-      ? '${formatUtcShort(a)} – ${formatUtcShort(b)} UTC'
-      : formatTimeSpan(a, b);
+  // Once the span crosses into another day, one date at the front would be
+  // wrong for half of what is drawn, so both ends carry their own.
+  final sameDay = a.year == b.year && a.month == b.month && a.day == b.day;
+  return sameDay
+      ? '${formatUtcDate(a)} · ${formatTimeSpan(a, b)}'
+      : '${formatUtcShortWithYear(a)} – ${formatUtcShortWithYear(b)} UTC';
 }
 
 /// What came back, and whether the map is drawing all of it.
 String aisCountLabel(List<Vessel>? vessels, AisHistory history) {
   if (vessels == null) return 'Loading vessels…';
   if (vessels.isEmpty) {
-    return history == AisHistory.all
-        ? 'No AIS logged for this sensor'
-        : 'No vessels logged in this range';
+    return switch (history) {
+      AisHistory.all => 'No AIS logged for this sensor',
+      AisHistory.live => 'Nothing reporting in the last hour',
+      _ => 'No vessels logged in this range',
+    };
   }
   final moving = vessels.where((v) => v.isMoving).length;
   // Silence about a cap would read as "this is everything".
@@ -79,35 +87,67 @@ String aisCountLabel(List<Vessel>? vessels, AisHistory history) {
       '$moving moving$capped';
 }
 
-class AisPage extends ConsumerWidget {
+class AisPage extends ConsumerStatefulWidget {
   const AisPage({super.key, required this.stream});
 
   final String stream;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AisPage> createState() => _AisPageState();
+}
+
+class _AisPageState extends ConsumerState<AisPage> {
+  /// The last vessels drawn, held across a refresh of the same view.
+  ///
+  /// The live range refetches every minute, and each fetch is a different
+  /// provider key, so without this the map would be torn down and replaced by a
+  /// spinner once a minute — losing the camera, the selection and any sense that
+  /// this is one chart updating rather than four charts a minute.
+  List<Vessel>? _lastVessels;
+
+  /// What [_lastVessels] belongs to. When this changes the held data is stale in
+  /// a way a refresh is not: a different recording's traffic is a different
+  /// answer, not a newer one, and showing it briefly would be wrong.
+  Object? _lastKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final stream = widget.stream;
+    final view = ref.watch(aisViewProvider(stream));
+    final live = view.history == AisHistory.live;
     final active = ref.watch(activeFileProvider(stream));
 
-    if (active == null) {
-      return const _NoActiveFile();
+    // Live is the one range that does not need a recording: "what is out there
+    // now" stands on its own.
+    if (active == null && !live) {
+      return _NoActiveFile(
+        onShowLive: () =>
+            ref.read(aisViewProvider(stream).notifier).setHistory(AisHistory.live),
+      );
     }
 
     // This recording's own duration, not the folder's — folders mix lengths,
     // and querying AIS over 5 minutes for a 5-second recording would show
     // traffic that was never there while it was recording.
-    final durationMs = ref.watch(fileDurationsProvider(stream))[active.name];
-    final start = active.startTime;
+    final durationMs = active == null
+        ? null
+        : ref.watch(fileDurationsProvider(stream))[active.name];
+    final now = DateTime.now().toUtc();
+    final start = active?.startTime ?? now;
     final length = durationMs != null
         ? Duration(milliseconds: durationMs)
-        : _assumedDuration;
+        : (active == null ? Duration.zero : _assumedDuration);
     final end = start.add(length);
 
-    final view = ref.watch(aisViewProvider(stream));
+    // Watching the tick only in the live range is what moves "now" on, and so
+    // what refetches. Nothing is running in the other ranges.
+    if (live) ref.watch(aisLiveTickProvider);
 
     // Widen for a recording too short to hold a track, unless the operator has
     // already made the choice themselves. Deferred out of build: writing to a
     // provider mid-build is exactly the reentrancy Riverpod forbids.
-    final autoWiden = shouldAutoWiden(length) && !view.historyChosen;
+    final autoWiden =
+        active != null && shouldAutoWiden(length) && !view.historyChosen;
     if (autoWiden && view.history == AisHistory.recording) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref
@@ -116,11 +156,24 @@ class AisPage extends ConsumerWidget {
       });
     }
 
-    final q = aisQueryFor(view.history, start, end);
+    final q = aisQueryFor(view.history, start, end, now: now);
+    final query = (stream: stream, from: q.from, to: q.to, all: q.all);
     final sensor = ref.watch(sensorProvider(stream)).valueOrNull;
-    final vessels = ref.watch(
-      vesselsProvider((stream: stream, from: q.from, to: q.to, all: q.all)),
-    );
+    final vessels = ref.watch(vesselsProvider(query));
+
+    // The camera follows this, not the data: a live refresh must not drag the
+    // chart back to its default framing every minute.
+    // The recording is deliberately not part of the live key: scrubbing through
+    // recordings in the images window must not reset a live chart, which is not
+    // showing them anyway.
+    final viewKey = (stream, view.history, live ? null : active?.name);
+    if (_lastKey != viewKey) {
+      _lastKey = viewKey;
+      _lastVessels = null;
+    }
+    if (vessels.hasValue) _lastVessels = vessels.value;
+
+    final drawn = vessels.valueOrNull ?? _lastVessels;
 
     return Column(
       children: [
@@ -131,39 +184,39 @@ class AisPage extends ConsumerWidget {
           length: length,
           history: view.history,
           autoWidened: autoWiden,
-          vessels: vessels.valueOrNull,
+          refreshing: live && vessels.isLoading,
+          onRefresh: () => ref.invalidate(vesselsProvider(query)),
+          vessels: drawn,
         ),
         Expanded(
           child: switch (vessels) {
-            AsyncData(:final value) => AisMap(
+            _ when drawn != null => AisMap(
                 // Keyed by stream so swapping streams builds a fresh map rather
                 // than animating one sensor's camera to another's.
                 key: ValueKey(stream),
                 stream: stream,
-                vessels: value,
+                vessels: drawn,
                 sensor: sensor,
                 recordingStart: start,
                 recordingEnd: end,
                 fullScreen: false,
+                refitKey: viewKey,
                 onExpand: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => _FullScreenMap(
                       stream: stream,
-                      vessels: value,
+                      vessels: drawn,
                       sensor: sensor,
                       start: start,
                       end: end,
+                      refitKey: viewKey,
                     ),
                   ),
                 ),
               ),
             AsyncError(:final error) => _Error(
                 message: '$error',
-                onRetry: () => ref.invalidate(
-                  vesselsProvider(
-                    (stream: stream, from: q.from, to: q.to, all: q.all),
-                  ),
-                ),
+                onRetry: () => ref.invalidate(vesselsProvider(query)),
               ),
             _ => const Center(child: CircularProgressIndicator()),
           },
@@ -182,6 +235,8 @@ class _Header extends ConsumerWidget {
     required this.length,
     required this.history,
     required this.autoWidened,
+    required this.refreshing,
+    required this.onRefresh,
     required this.vessels,
   });
 
@@ -191,6 +246,13 @@ class _Header extends ConsumerWidget {
   final Duration length;
   final AisHistory history;
   final bool autoWidened;
+
+  /// A live refresh is in flight over data already on screen.
+  final bool refreshing;
+
+  /// Re-ask the server for the range currently shown.
+  final VoidCallback onRefresh;
+
   final List<Vessel>? vessels;
 
   @override
@@ -204,14 +266,29 @@ class _Header extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            aisSpanLabel(vessels, start, end),
-            style: const TextStyle(
-              color: IdentColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              fontFeatures: [FontFeature.tabularFigures()],
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  aisSpanLabel(vessels, start, end),
+                  style: const TextStyle(
+                    color: IdentColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+              if (refreshing)
+                const Padding(
+                  padding: EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 1.6),
+                  ),
+                ),
+            ],
           ),
           Text(
             aisCountLabel(vessels, history),
@@ -221,7 +298,19 @@ class _Header extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 6),
-          _HistoryChips(stream: stream, history: history),
+          _HistoryChips(
+            stream: stream,
+            history: history,
+            onRefresh: onRefresh,
+          ),
+          if (history == AisHistory.live)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Live: the last hour, refreshed every minute.',
+                style: TextStyle(color: IdentColors.ok, fontSize: 10.5),
+              ),
+            ),
           if (autoWidened)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -241,26 +330,46 @@ class _Header extends ConsumerWidget {
 }
 
 class _HistoryChips extends ConsumerWidget {
-  const _HistoryChips({required this.stream, required this.history});
+  const _HistoryChips({
+    required this.stream,
+    required this.history,
+    required this.onRefresh,
+  });
 
   final String stream;
   final AisHistory history;
+
+  /// Re-ask the server for the range currently shown.
+  final VoidCallback onRefresh;
 
   static const _labels = {
     AisHistory.recording: 'Recording',
     AisHistory.aroundRecording: '±1 h',
     AisHistory.all: 'All',
+    AisHistory.live: 'Live',
   };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Wrap(
       spacing: 6,
+      runSpacing: 4,
       children: [
         for (final entry in _labels.entries)
           ChoiceChip(
             label: Text(entry.value),
             selected: history == entry.key,
+            avatar: entry.key == AisHistory.live
+                ? Icon(
+                    Icons.circle,
+                    size: 8,
+                    // Green reads as "this is running", which is the one thing
+                    // that separates this range from the other three.
+                    color: history == entry.key
+                        ? IdentColors.shell
+                        : IdentColors.ok,
+                  )
+                : null,
             visualDensity: VisualDensity.compact,
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             labelStyle: TextStyle(
@@ -269,12 +378,20 @@ class _HistoryChips extends ConsumerWidget {
                   ? IdentColors.shell
                   : IdentColors.textSecondary,
             ),
-            selectedColor: IdentColors.accent,
+            selectedColor: entry.key == AisHistory.live
+                ? IdentColors.ok
+                : IdentColors.accent,
             backgroundColor: IdentColors.surfaceRaised,
             side: BorderSide.none,
             showCheckmark: false,
-            onSelected: (_) =>
-                ref.read(aisViewProvider(stream).notifier).setHistory(entry.key),
+            onSelected: (_) {
+              ref.read(aisViewProvider(stream).notifier).setHistory(entry.key);
+              // Tapping Live again means "get me the newest", so it re-asks
+              // rather than doing nothing because the range already matches.
+              if (entry.key == AisHistory.live && history == AisHistory.live) {
+                onRefresh();
+              }
+            },
           ),
       ],
     );
@@ -289,6 +406,7 @@ class _FullScreenMap extends StatelessWidget {
     required this.sensor,
     required this.start,
     required this.end,
+    required this.refitKey,
   });
 
   final String stream;
@@ -296,13 +414,14 @@ class _FullScreenMap extends StatelessWidget {
   final Sensor? sensor;
   final DateTime start;
   final DateTime end;
+  final Object refitKey;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          formatTimeSpan(start, end),
+          '${formatUtcDate(start)} · ${formatTimeSpan(start, end)}',
           style: const TextStyle(fontSize: 13),
         ),
       ),
@@ -313,29 +432,41 @@ class _FullScreenMap extends StatelessWidget {
         recordingStart: start,
         recordingEnd: end,
         fullScreen: true,
+        refitKey: refitKey,
       ),
     );
   }
 }
 
 class _NoActiveFile extends StatelessWidget {
-  const _NoActiveFile();
+  const _NoActiveFile({required this.onShowLive});
+
+  final VoidCallback onShowLive;
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.map_outlined, size: 44, color: IdentColors.idle),
-            SizedBox(height: 14),
-            Text(
+            const Icon(Icons.map_outlined, size: 44, color: IdentColors.idle),
+            const SizedBox(height: 14),
+            const Text(
               'Choose a recording in Live images.\n'
               'The map then shows the vessels present while it was recorded.',
               textAlign: TextAlign.center,
               style: TextStyle(color: IdentColors.textSecondary),
+            ),
+            const SizedBox(height: 18),
+            // The one view that stands without a recording, so it is offered
+            // here rather than left behind a selection the operator may not
+            // want to make.
+            FilledButton.tonalIcon(
+              onPressed: onShowLive,
+              icon: const Icon(Icons.circle, size: 10, color: IdentColors.ok),
+              label: const Text('Show live traffic'),
             ),
           ],
         ),

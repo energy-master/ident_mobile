@@ -329,6 +329,46 @@ void main() {
       expect(q.to, isNull);
       expect(q.all, isTrue);
     });
+
+    test('live ignores the recording and asks for the last hour', () {
+      final q = aisQueryFor(
+        AisHistory.live,
+        start,
+        end,
+        now: DateTime.utc(2026, 8, 1, 9, 30, 41),
+      );
+      expect(q.to, DateTime.utc(2026, 8, 1, 9, 30));
+      expect(q.from, DateTime.utc(2026, 8, 1, 8, 30));
+      expect(q.all, isFalse);
+    });
+
+    test('live windows are stable within a minute', () {
+      // The query is the provider's cache key, so a window that moved with the
+      // clock would refetch on every rebuild rather than once a minute.
+      final a = aisQueryFor(AisHistory.live, start, end,
+          now: DateTime.utc(2026, 8, 1, 9, 30, 1));
+      final b = aisQueryFor(AisHistory.live, start, end,
+          now: DateTime.utc(2026, 8, 1, 9, 30, 59));
+      expect(a, b);
+
+      final next = aisQueryFor(AisHistory.live, start, end,
+          now: DateTime.utc(2026, 8, 1, 9, 31, 0));
+      expect(next, isNot(b));
+    });
+  });
+
+  group('floorToMinute', () {
+    test('discards seconds and below', () {
+      expect(
+        floorToMinute(DateTime.utc(2026, 8, 1, 9, 30, 41, 512)),
+        DateTime.utc(2026, 8, 1, 9, 30),
+      );
+    });
+
+    test('a whole minute is already floored', () {
+      final t = DateTime.utc(2026, 8, 1, 9, 30);
+      expect(floorToMinute(t), t);
+    });
   });
 
   group('shouldAutoWiden', () {

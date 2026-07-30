@@ -195,6 +195,7 @@ class AisMap extends ConsumerStatefulWidget {
     required this.recordingStart,
     required this.recordingEnd,
     required this.fullScreen,
+    required this.refitKey,
     this.onExpand,
   });
 
@@ -212,6 +213,14 @@ class AisMap extends ConsumerStatefulWidget {
 
   /// True in the full-screen route, where nothing competes for gestures.
   final bool fullScreen;
+
+  /// What the camera is framing — the stream, the recording, the range.
+  ///
+  /// The camera is reframed when this changes, not when the vessels do. The two
+  /// came apart with the live range: it refetches every minute, and refitting on
+  /// new data would drag the chart back to its default framing each time,
+  /// undoing whatever the operator had zoomed into.
+  final Object refitKey;
 
   final VoidCallback? onExpand;
 
@@ -263,9 +272,11 @@ class _AisMapState extends ConsumerState<AisMap> {
         old.sensor != widget.sensor) {
       _tracks = prepareTracks(widget.vessels, _sensorPoint);
       _pruneView();
+    }
+    if (old.refitKey != widget.refitKey) {
       // A new recording means new traffic somewhere else; keeping the old
-      // camera would leave the operator looking at empty water. Between data
-      // changes the camera is left exactly where they put it.
+      // camera would leave the operator looking at empty water. Within one
+      // recording the camera is left exactly where they put it.
       final fit = _cameraFit();
       if (fit != null) _controller.fitCamera(fit);
     }

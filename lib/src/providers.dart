@@ -12,7 +12,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'ais_map_geometry.dart' show AisHistory;
+import 'ais_map_geometry.dart' show AisHistory, liveRefreshInterval;
 import 'api_client.dart';
 import 'auth.dart';
 import 'file_duration.dart';
@@ -305,6 +305,16 @@ class AisViewNotifier extends StateNotifier<AisView> {
     }
   }
 }
+
+/// Ticks while the AIS map is in its live range.
+///
+/// Watched only in that range, so nothing is running when the map is showing
+/// history. Each tick moves the live window's end to the new minute, which
+/// changes [vesselsProvider]'s key and so fetches — the tick itself carries no
+/// data, it is only the thing that makes "now" move.
+final aisLiveTickProvider = StreamProvider.autoDispose<int>((ref) {
+  return Stream<int>.periodic(liveRefreshInterval, (i) => i);
+});
 
 /// The AIS map's view state for one stream.
 ///

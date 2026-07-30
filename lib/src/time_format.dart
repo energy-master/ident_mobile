@@ -93,6 +93,19 @@ String formatUtcHhmm(DateTime t) => _hhmm.format(t.toUtc());
 /// `28 Jul` — the date beneath a lane's time.
 String formatUtcDateOnly(DateTime t) => _dateOnly.format(t.toUtc());
 
+final _dateWithYear = DateFormat('d MMM yyyy');
+final _shortWithYear = DateFormat('d MMM yyyy HH:mm');
+
+/// `28 Jul 2026` — a date that stands on its own.
+///
+/// The year is carried because these screens are as often used on archive
+/// material as on today's: `repmus25` is a 2025 deployment being read in 2026,
+/// and a bare `28 Jul` on a map header invites the reader to assume this year.
+String formatUtcDate(DateTime t) => _dateWithYear.format(t.toUtc());
+
+/// `28 Jul 2026 13:24` — a fully-qualified instant, for spans crossing days.
+String formatUtcShortWithYear(DateTime t) => _shortWithYear.format(t.toUtc());
+
 /// Readable length of a recording, e.g. `5 min`, `1 h 30 min`, `45 s`.
 String formatDuration(Duration d) {
   if (d.inSeconds < 60) return '${d.inSeconds} s';

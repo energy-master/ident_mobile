@@ -29,6 +29,29 @@ void main() {
       expect(aisSpanLabel(const [], start, end), contains('14:00:00'));
     });
 
+    test('always carries the date, including the year', () {
+      // These screens are used on archive material as often as on today's, so a
+      // bare time invites the reader to assume it means now.
+      expect(aisSpanLabel(null, start, end), contains('30 Jul 2026'));
+      expect(
+        aisSpanLabel([vessel(1, [at(start)])], start, end),
+        contains('30 Jul 2026'),
+      );
+    });
+
+    test('a span crossing midnight dates both ends', () {
+      final label = aisSpanLabel(
+        [
+          vessel(1, [at(DateTime.utc(2026, 7, 30, 23, 50))]),
+          vessel(2, [at(DateTime.utc(2026, 7, 31, 0, 10))]),
+        ],
+        start,
+        end,
+      );
+      expect(label, contains('30 Jul 2026 23:50'));
+      expect(label, contains('31 Jul 2026 00:10'));
+    });
+
     test('quotes the span of the fixes actually plotted', () {
       // The widened range loaded traffic from either side; saying "14:00:00 –
       // 14:00:05" here would be a straight lie about what is on screen.
@@ -67,10 +90,14 @@ void main() {
       );
     });
 
-    test('an empty all-history answer is about the sensor, not the range', () {
+    test('an empty answer says which question it is answering', () {
       expect(
         aisCountLabel(const [], AisHistory.all),
         'No AIS logged for this sensor',
+      );
+      expect(
+        aisCountLabel(const [], AisHistory.live),
+        'Nothing reporting in the last hour',
       );
     });
 
