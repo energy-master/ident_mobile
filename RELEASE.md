@@ -87,6 +87,35 @@ Required both in App Store Connect metadata and reachable from inside the app.
 every upload**, even for a re-upload of an identical binary. Apple rejects a
 duplicate outright.
 
+### Toolchain: Xcode 26 or later
+
+App Store Connect rejects anything built with an older SDK:
+
+> Validation failed (409) — SDK version issue. This app was built with the iOS
+> 17.5 SDK. All iOS and iPadOS apps must be built with the iOS 26 SDK or later,
+> included in Xcode 26 or later.
+
+That is a toolchain requirement, not a project setting: iOS 17.5 is the SDK
+Xcode 15.x carries, and no build setting here can change which SDK the installed
+Xcode ships. Apple has enforced it for all uploads since 28 April 2026.
+
+**Xcode 26 needs macOS Sequoia 15.6 or later**, so an older Mac may need an OS
+upgrade first. Install from the Mac App Store, then point the command line at it
+and confirm:
+
+```sh
+sudo xcode-select -s /Applications/Xcode.app
+xcodebuild -version          # expect Xcode 26.x
+flutter doctor -v            # confirms Flutter sees the new toolchain
+```
+
+`IPHONEOS_DEPLOYMENT_TARGET` stays at 13.0 and still builds under Xcode 26,
+which accepts targets back to iOS 12. Two things to know about that: Xcode 26
+ships no simulator below iOS 15, so the floor is untestable; and Xcode 27 raises
+the minimum the toolchain will build at all to iOS 15, turning it into a hard
+error. Raising it to 15.0 is therefore a when-not-if change, and cheap — iOS 13
+and 14 are iPhone-6s-era devices no client is running.
+
 ### Archive and upload (on the Mac)
 
 ```sh
