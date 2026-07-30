@@ -95,9 +95,26 @@ cd ios && pod install && cd ..
 flutter build ipa --release
 ```
 
-Then either open `build/ios/archive/Runner.xcarchive` in Xcode → **Distribute
-App** → **TestFlight & App Store**, or upload the IPA in `build/ios/ipa/` with
-the **Transporter** app from the Mac App Store.
+Then open `build/ios/archive/Runner.xcarchive` in Xcode → **Distribute App**.
+(Or `flutter build ipa` then upload `build/ios/ipa/*.ipa` with the **Transporter**
+app — same result, fewer dialogs.)
+
+Xcode offers two options that both say TestFlight, and only one of them leads
+anywhere:
+
+| Xcode option | Internal testers | External testers | Can ever reach the App Store |
+|---|---|---|---|
+| **TestFlight & App Store** | yes | yes | yes |
+| **TestFlight Internal Only** | yes | **no** | **never** |
+
+Choose **TestFlight & App Store**. An Internal Only build is permanently marked
+as such — it cannot be promoted to external testing later, so picking it means
+re-archiving under a fresh build number.
+
+"Internal Only" is not a shortcut to clients, because **internal testers must be
+App Store Connect users on the account**. Making a client an internal tester
+means giving them a login to App Store Connect, which is the wrong trade
+entirely. Clients are external testers; that is what Beta App Review is for.
 
 Processing in App Store Connect takes roughly 5–30 minutes before the build
 appears under TestFlight.
