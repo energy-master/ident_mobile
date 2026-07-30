@@ -96,6 +96,10 @@ class _FileViewerState extends ConsumerState<FileViewer> {
 
   bool _showDecisions = false;
 
+  /// A focus request already queued for the end of this frame, so several
+  /// rebuilds before it lands do not queue it several times.
+  String? _focusScheduled;
+
   /// Fixed extent per strip item, so centring the active one is arithmetic
   /// rather than a measured guess.
   static const double _stripItemExtent = 76;
@@ -128,6 +132,37 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     // reading as a change and rebuilding the map for nothing.
     if (notifier.state?.name == _file.name) return;
     notifier.state = _file;
+  }
+
+  /// Focus a recording another window asked for, whether the request arrived
+  /// while this viewer was on screen or was left waiting while it was not.
+  ///
+  /// It has to be read from the provider's current value, not merely listened
+  /// for. The dashboard keeps no cache extent, so the window nobody is looking
+  /// at is disposed: a request raised from the Decisions window lands while this
+  /// viewer does not exist, and a listener registered when it is rebuilt a
+  /// moment later never fires, because by then the value has already changed.
+  /// That was every request made from more than one window away — which was all
+  /// the ones worth making, and why tapping a detection landed on the newest
+  /// recording rather than the one that fired.
+  ///
+  /// The request is cleared only once it has been acted on. A recording the
+  /// current filter hides is left pending on purpose, so that images_page can
+  /// widen the filter and the viewer it rebuilds can pick the request up.
+  void _consumeFocusRequest(String? name) {
+    if (name == null || name == _focusScheduled) return;
+    final i = widget.files.indexWhere((f) => f.name == name);
+    if (i < 0) return;
+
+    _focusScheduled = name;
+    // After this frame: this runs during build, where the pager may not yet
+    // have been laid out and writing to a provider would be reentrant.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusScheduled = null;
+      if (!mounted) return;
+      handleStripTap(i);
+      ref.read(fileFocusRequestProvider(widget.folder).notifier).state = null;
+    });
   }
 
   /// Absorb a refreshed file list in place, rather than being rebuilt around it.
@@ -285,19 +320,8 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     final start = _file.startTime;
     final end = durationMs == null ? null : start.add(Duration(milliseconds: durationMs));
 
-    // Another window asked to focus a recording — act on it, then clear it.
-    ref.listen(fileFocusRequestProvider(widget.folder), (_, next) {
-      if (next == null) return;
-      final i = widget.files.indexWhere((f) => f.name == next);
-      if (i >= 0) handleStripTap(i);
-      // Clear after this frame; writing to a provider during a listener would
-      // re-enter the build that is currently running.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ref.read(fileFocusRequestProvider(widget.folder).notifier).state = null;
-        }
-      });
-    });
+    // Another window asked to focus a recording.
+    _consumeFocusRequest(ref.watch(fileFocusRequestProvider(widget.folder)));
 
     return Column(
       children: [

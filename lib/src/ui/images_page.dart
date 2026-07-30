@@ -140,6 +140,21 @@ class _ImagesPageState extends ConsumerState<ImagesPage> with WidgetsBindingObse
       _ => all,
     };
 
+    // A recording another window asked for that this filter hides would land
+    // nowhere: the viewer cannot scroll to a file that is not in its list, and
+    // the request would sit unconsumed while the user looked at the wrong
+    // recording. The filter steps aside instead — the request was explicit, the
+    // filter was not.
+    final focus = ref.watch(fileFocusRequestProvider(widget.stream));
+    if (focus != null &&
+        _mode != FeedMode.all &&
+        !files.any((f) => f.name == focus) &&
+        all.any((f) => f.name == focus)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) handleModeChanged(FeedMode.all);
+      });
+    }
+
     // Neither filter is restricted to what is on screen, so an empty result is
     // a normal state rather than a data problem — say which filter emptied it.
     if (files.isEmpty) return _FilterEmpty(mode: _mode);

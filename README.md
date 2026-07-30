@@ -11,25 +11,35 @@ model editing and the WebGL spectrogram stay in the web app.
    glowing status light per health check (acoustic data, model runs, AIS feed).
    Tap a card to open its dashboard; tap **Diagnostics** to expand the detail
    in place.
-3. **Dashboard** (abridged) — two pages, swapped by tabs or swipe:
-   - **Notifications**: detection and AIS-proximity alerts, newest first,
-     grouped by day, paged as you scroll. Tap one for a full detail screen; when
-     an alert names a single recording, **Open recording** jumps straight to it.
+3. **Dashboard** (abridged) — four windows in a ring, swiped between. Swiping
+   past either end carries on into the other, so no window is more than two
+   swipes away and Notifications, at the end of the ring, is one backward swipe
+   from Live images:
    - **Live images**: opens straight onto the newest recording — there is no
      intermediate file list, because the thumbnail strip *is* the list and is
      always in view. Shows the recording's time span, its spectrogram (pinch to
      zoom, swipe for the next), a favourite star, a date/time search, and the
      detections recorded against that file.
 
-     A **Live / All / Favourites** selector chooses what the strip holds:
-     *Live* is every recording pinned to the newest, re-pinning by itself as new
-     ones arrive; *All* starts at the newest and then lets you browse freely
-     without a background refresh yanking you away; *Favourites* is the starred
-     ones only.
+     A **Live / All / Active / Favourites** selector chooses what the strip
+     holds: *Live* is every recording pinned to the newest, re-pinning by itself
+     as new ones arrive; *All* starts at the newest and then lets you browse
+     freely without a background refresh yanking you away; *Active* is the
+     recordings a model fired on; *Favourites* is the starred ones only.
+   - **AIS**: a chart of the vessels present while the selected recording was
+     made — tracks coloured oldest-to-newest, heading arrows, range rings round
+     the sensor, and a tap on any fix for that vessel's details and a jump back
+     to the recording covering that moment. A range selector widens the window
+     past the recording, or follows live traffic.
+   - **Decisions**: every detection across the stream, grouped by recording. Tap
+     a row to open that recording in Live images.
+   - **Notifications**: detection and AIS-proximity alerts, newest first,
+     grouped by day, paged as you scroll. Tap one for a full detail screen; when
+     an alert names a single recording, **Open recording** jumps straight to it.
 
-**One data flow per screen, at every size.** Notifications and the live feed are
-never tiled side by side — each is a distinct thing to read, and splitting the
-screen halves both without making either easier to follow.
+**One data flow per screen, at every size.** The windows are never tiled side by
+side — each is a distinct thing to read, and splitting the screen halves both
+without making either easier to follow.
 
 **Orientation is never forced.** The spectrogram keeps its natural wide aspect
 either way; what adapts is the thumbnail strip — along the bottom in portrait,
@@ -38,7 +48,7 @@ down the side in landscape, where vertical space is the scarce resource.
 If the account's lead has uploaded a company logo, it appears in the home-screen
 title bar, mirroring the SPA chrome.
 
-Not in v1.0: sensor map, vessel list, live WebGL render.
+Not in v1.0: live WebGL render, audio playback.
 
 ## Architecture
 

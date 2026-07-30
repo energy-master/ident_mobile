@@ -1,11 +1,17 @@
 /// One stream's dashboard.
 ///
-/// Three data windows, reached by swiping: **Live images**, **Notifications**
-/// and **Decisions**. There is no tab bar — the windows are siblings and a menu
-/// across the top would cost vertical space on every screen to say something a
-/// swipe already says. The current window's name lives in the app bar, which
-/// exists anyway, alongside a row of dots so the set stays discoverable without
-/// a control of its own.
+/// Four data windows, reached by swiping: **Live images**, **AIS**,
+/// **Decisions** and **Notifications**. There is no tab bar — the windows are
+/// siblings and a menu across the top would cost vertical space on every screen
+/// to say something a swipe already says. The current window's name lives in the
+/// app bar, which exists anyway, alongside a row of dots so the set stays
+/// discoverable without a control of its own.
+///
+/// **The windows form a ring, not a row.** Swiping past either end carries on
+/// into the other, so no window is ever more than two swipes away and neither
+/// end is a dead stop. Notifications sits last precisely because of that: it is
+/// the window most often wanted from a standing start, and putting it at the end
+/// of the ring puts it one backward swipe from Live images.
 ///
 /// **One data flow per screen, at every size.** The windows are never tiled
 /// side by side, even where a tablet has the room: each is a distinct thing to
@@ -24,6 +30,22 @@ import 'images_page.dart';
 import 'notifications_page.dart';
 import 'streams_screen.dart' show DiagnosticsDetail;
 
+/// The page to scroll to in order to reach [window] from [current].
+///
+/// The ring is built from an unbounded page index, so reaching a window is a
+/// matter of stepping the shortest way round rather than jumping to a fixed
+/// page. Whole-ring jumps are what this exists to avoid: from Notifications,
+/// Live images is one swipe forward, and animating backwards through every other
+/// window to reach it would be a two-second journey to the next screen along.
+int nextPageForWindow(int current, int window, int count) {
+  final forward = ((window - current) % count + count) % count;
+  // A tie (two windows apart in a four-window ring) goes forward, so the same
+  // pair always animates the same way rather than depending on where you came
+  // from.
+  final step = forward * 2 <= count ? forward : forward - count;
+  return current + step;
+}
+
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key, required this.stream});
 
@@ -34,17 +56,42 @@ class DashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _DashboardScreenState extends ConsumerState<DashboardScreen> {
-  final _pages = PageController();
-  int _page = 0;
-
   // AIS sits next to Live images because it reads the recording selected there
-  // — the two are meant to be swiped between.
-  static const _titles = ['Live images', 'AIS', 'Notifications', 'Decisions'];
+  // — the two are meant to be swiped between. Notifications sits last so that
+  // one backward swipe from Live images reaches it.
+  static const _titles = ['Live images', 'AIS', 'Decisions', 'Notifications'];
+
+  /// Where the ring starts, in page numbers.
+  ///
+  /// The PageView is unbounded so it can be swiped either way for as long as
+  /// anyone cares to; starting a long way from zero is what makes "backwards"
+  /// possible at all, since page indices cannot go negative. Nobody will swipe
+  /// four thousand windows to find the wall.
+  static const _ringOrigin = 4000;
+
+  final _pages = PageController(initialPage: _ringOrigin);
+  int _page = _ringOrigin;
+
+  /// Which of [_titles] the current page shows.
+  int get _window => _page % _titles.length;
 
   @override
   void dispose() {
     _pages.dispose();
     super.dispose();
+  }
+
+  /// Bring one window into view, the short way round the ring.
+  void goToWindow(int window) {
+    if (!_pages.hasClients) return;
+    final current = _pages.page?.round() ?? _page;
+    final target = nextPageForWindow(current, window, _titles.length);
+    if (target == current) return;
+    _pages.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   /// Diagnostics is a sheet rather than a fourth window: it is a health check
@@ -88,13 +135,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
     // moves the dashboard, so the two animations run together rather than the
     // user arriving at an already-settled screen.
     ref.listen(fileFocusRequestProvider(widget.stream), (_, next) {
-      if (next == null || !_pages.hasClients) return;
-      if (_pages.page?.round() == _imagesPage) return;
-      _pages.animateToPage(
-        _imagesPage,
-        duration: const Duration(milliseconds: 320),
-        curve: Curves.easeOutCubic,
-      );
+      if (next != null) goToWindow(_imagesPage);
     });
 
     return Scaffold(
@@ -110,11 +151,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             Row(
               children: [
                 Text(
-                  _titles[_page],
+                  _titles[_window],
                   style: const TextStyle(fontSize: 11.5, color: IdentColors.textSecondary),
                 ),
                 const SizedBox(width: 8),
-                _Dots(count: _titles.length, active: _page),
+                _Dots(count: _titles.length, active: _window),
               ],
             ),
           ],
@@ -129,15 +170,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       body: SafeArea(
         top: false,
-        child: PageView(
+        // Unbounded and built on demand, which is what closes the ring: page
+        // 4003 is the same window as 3999, so there is no end to stop at in
+        // either direction. Nothing is lost by building rather than listing the
+        // four — a PageView keeps no cache extent, so the window you are not
+        // looking at was already being disposed and rebuilt.
+        child: PageView.builder(
           controller: _pages,
           onPageChanged: (i) => setState(() => _page = i),
-          children: [
-            ImagesPage(stream: widget.stream),
-            AisPage(stream: widget.stream),
-            NotificationsPage(stream: widget.stream),
-            DecisionsPage(stream: widget.stream),
-          ],
+          itemBuilder: (context, i) => switch (i % _titles.length) {
+            0 => ImagesPage(stream: widget.stream),
+            1 => AisPage(stream: widget.stream),
+            2 => DecisionsPage(stream: widget.stream),
+            _ => NotificationsPage(stream: widget.stream),
+          },
         ),
       ),
     );
