@@ -119,6 +119,32 @@ entirely. Clients are external testers; that is what Beta App Review is for.
 Processing in App Store Connect takes roughly 5–30 minutes before the build
 appears under TestFlight.
 
+### "Command PhaseScriptExecution failed with a nonzero exit code"
+
+Building in Xcode from a fresh clone, before the CLI has run, fails here every
+time. Both script phases in `Runner.xcodeproj` invoke
+
+```
+$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh
+```
+
+and `FLUTTER_ROOT` is defined in `ios/Flutter/Generated.xcconfig`, which is
+gitignored (`ios/.gitignore:21`) because it hardcodes a path to the local
+Flutter SDK. Absent, the variable expands to nothing and the phase exits
+nonzero. `Podfile` is generated and untracked for the same reason.
+
+So the CLI has to go first — `flutter pub get` writes the xcconfig, and
+`flutter build ipa` creates the Podfile and runs `pod install`. Xcode cannot
+produce either on its own.
+
+Then open **`ios/Runner.xcworkspace`**, never `Runner.xcodeproj`: with
+CocoaPods in the build the bare project omits the Pods and fails much the same
+way.
+
+The message itself carries no information — it only says a script phase
+returned nonzero. The real error is the line above it, reachable in the Report
+navigator (⌘9) by expanding the red `PhaseScriptExecution` row.
+
 ### Beta App Review
 
 Only the **first** build for external testing gets a full review; later builds of
