@@ -90,8 +90,10 @@ class IdentPhi extends StatelessWidget {
         fontSize: 15 * (2.4 / 1.35) * scale,
         // No `height: 1` despite the CSS. There it stops an inline box adding
         // leading inside a flex row; here it would crop the line box below
-        // Courier's descender, and φ has one. The extra space is transparent
-        // and the glyph is top-anchored, so it costs nothing visible.
+        // Courier's descender, and φ has one. The extra space is transparent,
+        // and it sits almost symmetrically around the glyph — φ's stem
+        // overshoots the ascender and the baseline alike — so [IdentLockup] can
+        // centre this line box and land the ink where it belongs.
       ),
     );
   }
@@ -124,9 +126,20 @@ class IdentLockup extends StatelessWidget {
     // 0.6rem against the wordmark's 1.35rem, either side of the rule.
     final gap = 10.0 * scale;
 
-    // Everything top-aligned, which is `align-self: flex-start` on the closing
-    // glyph: it sits in line with "IDent" rather than floating against the
-    // middle of the wordmark.
+    // The closing mark is centred on the wordmark, not top-aligned.
+    //
+    // The CSS says `align-self: flex-start` and this used to follow it, but
+    // faithful is not the same as right: the φ's ink is a little over half the
+    // wordmark's height, so anchoring it to the top left it sitting against
+    // "IDent" with nothing beside "dynamics", reading as a mark floating above
+    // the wordmark rather than one closing it. Same for a company logo, which
+    // is shorter still.
+    //
+    // Centring is safe to do by line box here. Courier carries ascender and
+    // descender padding that a single glyph never fills — which is exactly why
+    // the icon generator centres by ink — but φ's stem overshoots both ends, so
+    // its ink sits within 1.5% of its own line-box centre. That is 0.4 px at
+    // app-bar scale.
     //
     // Deliberately not IntrinsicHeight + `align-items: stretch`, the faithful
     // translation of the CSS. That makes the row's height depend on the
@@ -136,7 +149,7 @@ class IdentLockup extends StatelessWidget {
     // which is a height known without measuring anything.
     return Row(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         IdentLogo(scale: scale),
         SizedBox(width: gap),

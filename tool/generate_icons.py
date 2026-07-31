@@ -124,8 +124,14 @@ def build_launch(width, height):
 
     Proportions follow `#app-logo` in the web app's styles.css: 1.35rem over
     0.95rem at 0.18em tracking, a 0.6rem gap either side of a 1px divider at
-    0.45 alpha, and the φ at 2.4rem anchored to the divider's top rather than
-    centred.
+    0.45 alpha, and the φ at 2.4rem.
+
+    The φ is centred on the divider, **not** anchored to its top as the CSS
+    `align-self: flex-start` would have it. Faithful to the web is not the same
+    as right here: the φ's ink is about half the divider's height, so anchoring
+    it to the top leaves it sitting against "IDent" with nothing beside
+    "dynamics", and the mark reads as floating above its own wordmark rather
+    than closing it.
     """
     n_w, n_h = width * SS, height * SS
     img = Image.new("RGBA", (n_w, n_h), (0, 0, 0, 0))
@@ -171,8 +177,12 @@ def build_launch(width, height):
     div_w = max(1, round(n_w / 400))
     d.rectangle([div_x, y0, div_x + div_w, y0 + stack_h], fill=GREEN + (115,))
 
-    # φ anchored to the top of the divider, per the .logo-phi rule.
-    d.text((div_x + div_w + gap, y0 - pt), PHI, font=fphi, fill=GREEN + (255,))
+    # φ centred on the divider by its ink box. Centring on the line box would
+    # float it high all over again — Courier carries ascender and descender
+    # padding this single glyph never fills, which is the same reason _centred
+    # exists for the icon.
+    phi_y = y0 + (stack_h - (pb - pt)) / 2 - pt
+    d.text((div_x + div_w + gap, phi_y), PHI, font=fphi, fill=GREEN + (255,))
 
     return img.resize((width, height), Image.LANCZOS)
 
