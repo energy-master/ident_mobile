@@ -15,6 +15,7 @@ import '../ais_map_geometry.dart';
 import '../file_duration.dart';
 import '../models.dart';
 import '../providers.dart';
+import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
@@ -62,11 +63,18 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
 
   Vessel get _vessel => widget.track.vessel;
 
-  /// Move the Live images window to the recording covering this fix.
+  /// Put the app at the moment this vessel reported here.
   ///
-  /// The dashboard listens on [fileFocusRequestProvider] and swipes itself back
-  /// to the viewer, which is the same route `decisions_page.dart` takes to get
-  /// from a detection to its recording.
+  /// The clock moves to the fix's own timestamp — not to the start of whatever
+  /// recording covers it — so the app is at the instant the operator picked off
+  /// the chart. The dashboard then swipes itself back to the viewer via
+  /// [fileFocusRequestProvider], the same route `decisions_page.dart` takes.
+  ///
+  /// Nothing moves when no recording covers the fix. That case is real rather
+  /// than defensive — in the wider history ranges a fix can easily predate the
+  /// oldest recording still on disk — and moving the clock somewhere the images
+  /// window cannot follow would leave the app claiming a moment it has no
+  /// audio for.
   Future<void> _goToThisTime() async {
     // Captured before the await and before any pop: this sheet is gone by the
     // time the second pop runs, so its context cannot be used to find them.
@@ -81,8 +89,6 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
       final file = recordingAt(widget.fix.time, files, durations);
 
       if (file == null) {
-        // Real, not defensive: in the wider history ranges a fix can easily
-        // predate the oldest recording still on disk.
         messenger.showSnackBar(
           SnackBar(
             content: Text(
@@ -93,6 +99,9 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
         return;
       }
 
+      ref
+          .read(streamClockProvider(widget.stream).notifier)
+          .pin(widget.fix.time, ClockSource.ais);
       ref.read(fileFocusRequestProvider(widget.stream).notifier).state =
           file.name;
       navigator.pop();

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models.dart';
 import '../providers.dart';
+import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
 import 'file_viewer.dart';
@@ -48,6 +49,15 @@ class NotificationDetailScreen extends ConsumerWidget {
       );
       return;
     }
+
+    // Opening an alert's recording is choosing a moment as much as choosing a
+    // file, so the app goes there rather than only this route. Without it the
+    // viewer pushed here would sit on one recording while the stream's own
+    // windows behind it still answered about another — and the viewer would
+    // then be dragged back to the clock the moment it caught up.
+    ref
+        .read(streamClockProvider(item.streamFolder).notifier)
+        .pin(files[index].startTime, ClockSource.recording);
 
     navigator.push(
       MaterialPageRoute<void>(

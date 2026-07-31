@@ -27,6 +27,7 @@ import '../api_client.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../spectrogram_geometry.dart';
+import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
@@ -100,6 +101,9 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   /// rebuilds before it lands do not queue it several times.
   String? _focusScheduled;
 
+  /// The same, for a move the clock has asked for.
+  int? _clockScheduled;
+
   /// Fixed extent per strip item, so centring the active one is arithmetic
   /// rather than a measured guess.
   static const double _stripItemExtent = 76;
@@ -114,24 +118,75 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       // Centre the strip on the opening recording once the first frame has laid
       // it out — before that the controller has no viewport to measure against.
       _centreStrip(_index, animate: false);
-      _publishActiveFile();
+      _alignClockToOpening();
     });
   }
 
-  /// Tell sibling windows which recording is selected. The AIS map reads this
-  /// to plot the traffic present while *this* recording was made, so the
-  /// selection has to be visible outside the viewer.
-  void _publishActiveFile() {
+  /// Move the app to the recording it actually opened on, when that is not the
+  /// one the clock names.
+  ///
+  /// Narrowing the filter is what causes this: the app is sitting at a moment
+  /// in a recording that is not starred, the strip is rebuilt holding only
+  /// favourites, and the nearest one it can open on is somewhere else. Left
+  /// alone the header would show one recording while the AIS window answered
+  /// about another, which is the exact disagreement the clock exists to stop.
+  ///
+  /// A live clock is left alone. It has no moment to be inconsistent with, and
+  /// publishing here would take the feed off live every time this window was
+  /// rebuilt — which is every swipe.
+  void _alignClockToOpening() {
     if (widget.files.isEmpty) return;
-    final notifier = ref.read(activeFileProvider(widget.folder).notifier);
-    // A refresh rebuilds every StreamFile, so the selection is a new object each
-    // minute even when the user has not moved. Comparing by name keeps that from
-    // reading as a change and rebuilding the map for nothing.
-    if (notifier.state?.name == _file.name) return;
-    notifier.state = _file;
+    final at = ref.read(streamClockProvider(widget.folder)).at;
+    if (at == null) return;
+
+    final file = widget.files[_index];
+    final start = file.startTime;
+    final ms = ref.read(fileDurationsProvider(widget.folder))[file.name] ?? 0;
+    final end = start.add(Duration(milliseconds: ms));
+
+    if (at.isBefore(start) || at.isAfter(end)) _publishClock(_index);
+  }
+
+  /// Put the whole app at this recording's moment.
+  ///
+  /// Only ever called for a move the operator made. The viewer must not pin the
+  /// clock for a move it made itself — following a new arrival, or catching up
+  /// to a clock that moved elsewhere — or the live feed would take itself off
+  /// live once a minute.
+  void _publishClock(int i) {
+    if (i < 0 || i >= widget.files.length) return;
+    ref
+        .read(streamClockProvider(widget.folder).notifier)
+        .pin(widget.files[i].startTime, ClockSource.recording);
+  }
+
+  /// Catch up with a clock that moved somewhere this viewer is not.
+  ///
+  /// This is how tapping Live gets back to the newest recording, and how a jump
+  /// made from the decisions feed or the AIS chart reaches the strip. It moves
+  /// the viewer and deliberately does not publish: the clock is already where
+  /// it wants to be, and re-publishing would pin a live clock to whatever file
+  /// it had just landed on.
+  /// The mark is held until the move *lands*, not merely until the frame ends.
+  /// The pager takes a fifth of a second to animate and `_index` only catches up
+  /// when it settles, so a mark cleared any earlier would let every rebuild in
+  /// between re-issue the same move — each one restarting the animation it was
+  /// already running.
+  void _followClock(StreamClock clock, Map<String, int> durations) {
+    if (widget.files.isEmpty) return;
+    final target = clockFileIndex(widget.files, clock, durations);
+    if (target == _index || target == _clockScheduled) return;
+
+    _clockScheduled = target;
+    // After this frame: this runs during build, where the pager may not be laid
+    // out yet.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _moveTo(target);
+    });
   }
 
   /// Focus a recording another window asked for, whether the request arrived
@@ -149,6 +204,11 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   /// The request is cleared only once it has been acted on. A recording the
   /// current filter hides is left pending on purpose, so that images_page can
   /// widen the filter and the viewer it rebuilds can pick the request up.
+  ///
+  /// It moves without publishing, for the same reason [_followClock] does:
+  /// whoever raised the request already set the clock, and often to a finer
+  /// moment than this file's start — the instant a detection fired, or the
+  /// instant a vessel reported. Republishing would round that off.
   void _consumeFocusRequest(String? name) {
     if (name == null || name == _focusScheduled) return;
     final i = widget.files.indexWhere((f) => f.name == name);
@@ -160,7 +220,7 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusScheduled = null;
       if (!mounted) return;
-      handleStripTap(i);
+      _moveTo(i);
       ref.read(fileFocusRequestProvider(widget.folder).notifier).state = null;
     });
   }
@@ -199,7 +259,6 @@ class _FileViewerState extends ConsumerState<FileViewer> {
         _pages.jumpToPage(_index);
       }
       _centreStrip(_index, animate: false);
-      _publishActiveFile();
     });
   }
 
@@ -211,12 +270,25 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   }
 
   void handlePageChanged(int i) {
+    if (_clockScheduled == i) _clockScheduled = null;
     setState(() => _index = i);
     _centreStrip(i);
-    _publishActiveFile();
   }
 
+  /// Choosing a recording — the operator's move, so the app time goes with it.
+  ///
+  /// Including when they tap the newest recording while the feed is live. That
+  /// does take the app off live, which looks like nothing happened until the
+  /// next file lands and the strip stays put; it is the honest reading of a
+  /// deliberate tap, and the Live filter beside it is one tap back.
   void handleStripTap(int i) {
+    _publishClock(i);
+    _moveTo(i);
+  }
+
+  /// Move the viewer, without touching the clock.
+  void _moveTo(int i) {
+    if (!_pages.hasClients) return;
     _pages.animateToPage(
       i,
       duration: const Duration(milliseconds: 240),
@@ -316,9 +388,14 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     // Per-file duration, not the folder's: a folder can mix 5-second and
     // 5-minute recordings, and using the folder figure puts the wrong span in
     // the header and maps the overlay against the wrong time axis.
-    final durationMs = ref.watch(fileDurationsProvider(widget.folder))[_file.name];
+    final durations = ref.watch(fileDurationsProvider(widget.folder));
+    final durationMs = durations[_file.name];
     final start = _file.startTime;
     final end = durationMs == null ? null : start.add(Duration(milliseconds: durationMs));
+
+    // The app time moved somewhere else — back to live, or to a moment picked
+    // in another window.
+    _followClock(ref.watch(streamClockProvider(widget.folder)), durations);
 
     // Another window asked to focus a recording.
     _consumeFocusRequest(ref.watch(fileFocusRequestProvider(widget.folder)));

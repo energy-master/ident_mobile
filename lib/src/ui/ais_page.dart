@@ -1,10 +1,17 @@
-/// AIS — vessel traffic during the active recording.
+/// AIS — vessel traffic at the application clock.
 ///
-/// The map is tied to whichever recording is selected in the Live images
-/// window: swipe here after choosing a file and you see the vessels that were
-/// present *while that recording was made*. That framing is the point. A live
-/// snapshot would answer "what is out there now", which tells you nothing about
-/// a detection from three days ago.
+/// The map is tied to the moment the app is at: the recording covering the
+/// clock is the window it plots, so you see the vessels that were present
+/// *while that recording was made*. That framing is the point. A live snapshot
+/// would answer "what is out there now", which tells you nothing about a
+/// detection from three days ago.
+///
+/// **`Live` here is not the clock's live.** The AIS poller and the acoustic
+/// feed are separate pipelines that land at different times, so the newest fix
+/// and the newest recording are rarely the same moment. This window's `Live`
+/// range means the newest AIS, and the two are deliberately left unlinked: an
+/// operator who has asked for current traffic keeps it, whatever the clock is
+/// doing, and the header always says which range is in force.
 ///
 /// **The history range exists because the framing has a floor.** The AIS poller
 /// logs a fix every half minute or so, and folders like `repmus25` are full of
@@ -120,7 +127,13 @@ class _AisPageState extends ConsumerState<AisPage> {
     // Live is the one range that does not need a recording: "what is out there
     // now" stands on its own.
     if (active == null && !live) {
-      return _NoActiveFile(
+      // Distinguish "nothing to anchor to" from "not read the folder yet".
+      // The clock resolves against the file listing, so while that is in flight
+      // there is no recording — which is a wait, not an answer.
+      if (ref.watch(streamFilesProvider(stream)).isLoading) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      return _NoRecordingAtClock(
         onShowLive: () =>
             ref.read(aisViewProvider(stream).notifier).setHistory(AisHistory.live),
       );
@@ -438,8 +451,13 @@ class _FullScreenMap extends StatelessWidget {
   }
 }
 
-class _NoActiveFile extends StatelessWidget {
-  const _NoActiveFile({required this.onShowLive});
+/// No recording covers where the app currently is.
+///
+/// Either the folder holds none at all, or the clock is sitting further from
+/// every recording than `recordingSearchTolerance` allows — which happens on
+/// archive streams whose files have rolled off since the AIS was logged.
+class _NoRecordingAtClock extends StatelessWidget {
+  const _NoRecordingAtClock({required this.onShowLive});
 
   final VoidCallback onShowLive;
 
@@ -454,8 +472,9 @@ class _NoActiveFile extends StatelessWidget {
             const Icon(Icons.map_outlined, size: 44, color: IdentColors.idle),
             const SizedBox(height: 14),
             const Text(
-              'Choose a recording in Live images.\n'
-              'The map then shows the vessels present while it was recorded.',
+              'No recording covers the time the app is at.\n'
+              'Choose one in Live images and the map shows the vessels '
+              'present while it was recorded.',
               textAlign: TextAlign.center,
               style: TextStyle(color: IdentColors.textSecondary),
             ),

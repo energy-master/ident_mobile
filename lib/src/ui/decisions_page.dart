@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models.dart';
 import '../providers.dart';
+import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
 
@@ -19,17 +20,29 @@ class DecisionsPage extends ConsumerWidget {
 
   final String stream;
 
-  /// Show the recording a detection came from, in the live viewer.
+  /// Put the app at the moment this detection fired, and show its recording.
   ///
-  /// This raises a focus request rather than pushing a new screen: the viewer
-  /// is already a sibling window, so the dashboard slides across to it and the
-  /// viewer scrolls its strip to the recording. Pushing a second copy of the
-  /// viewer on top would lose the user's place in the strip and leave them a
-  /// back-stack to unwind.
+  /// Two things happen, and they are not the same thing. The **clock** moves to
+  /// the instant the detection fired, which is what every other window in the
+  /// stream then answers about — the AIS chart included. The **focus request**
+  /// only moves the dashboard: the viewer is already a sibling window, so it
+  /// slides across rather than pushing a second copy of itself on top, which
+  /// would lose the user's place in the strip and leave a back-stack to unwind.
+  ///
+  /// The clock is set to the detection's own offset into the recording rather
+  /// than to the file's start. It resolves to the same recording either way,
+  /// and a detection three minutes into a five-minute file is a different
+  /// moment from the start of it.
   ///
   /// The live listing is the source of truth for what still exists — a stream
   /// rolls old recordings off, so a detection can outlive its file.
-  Future<void> handleOpen(BuildContext context, WidgetRef ref, String fileName) async {
+  Future<void> handleOpen(
+    BuildContext context,
+    WidgetRef ref,
+    Decision decision,
+  ) async {
+    final fileName = decision.fileName;
+    if (fileName == null) return;
     final messenger = ScaffoldMessenger.of(context);
 
     List<StreamFile> files;
@@ -40,12 +53,20 @@ class DecisionsPage extends ConsumerWidget {
       return;
     }
 
-    if (!files.any((f) => f.name == fileName)) {
+    final file = files.where((f) => f.name == fileName).firstOrNull;
+    if (file == null) {
       messenger.showSnackBar(
         const SnackBar(content: Text('That recording is no longer in the stream folder.')),
       );
       return;
     }
+
+    ref.read(streamClockProvider(stream).notifier).pin(
+          file.startTime.add(
+            Duration(milliseconds: (decision.tmin * 1000).round()),
+          ),
+          ClockSource.decision,
+        );
 
     // The dashboard listens for this too, and slides to the images window.
     ref.read(fileFocusRequestProvider(stream).notifier).state = fileName;
@@ -94,9 +115,7 @@ class DecisionsPage extends ConsumerWidget {
             if (newFile && d.fileName != null) _FileHeader(fileName: d.fileName!),
             _DecisionRow(
               decision: d,
-              onTap: d.fileName == null
-                  ? null
-                  : () => handleOpen(context, ref, d.fileName!),
+              onTap: d.fileName == null ? null : () => handleOpen(context, ref, d),
             ),
           ],
         );

@@ -15,27 +15,42 @@ model editing and the WebGL spectrogram stay in the web app.
    past either end carries on into the other, so no window is more than two
    swipes away and Notifications, at the end of the ring, is one backward swipe
    from Live images:
-   - **Live images**: opens straight onto the newest recording — there is no
-     intermediate file list, because the thumbnail strip *is* the list and is
-     always in view. Shows the recording's time span, its spectrogram (pinch to
-     zoom, swipe for the next), a favourite star, a date/time search, and the
-     detections recorded against that file.
+   - **Live images**: opens on whatever recording the application clock is at —
+     the newest one while the app is live. There is no intermediate file list,
+     because the thumbnail strip *is* the list and is always in view. Shows the
+     recording's time span, its spectrogram (pinch to zoom, swipe for the next),
+     a favourite star, a date/time search, and the detections recorded against
+     that file.
 
-     A **Live / All / Active / Favourites** selector chooses what the strip
-     holds: *Live* is every recording pinned to the newest, re-pinning by itself
-     as new ones arrive; *All* starts at the newest and then lets you browse
-     freely without a background refresh yanking you away; *Active* is the
-     recordings a model fired on; *Favourites* is the starred ones only.
-   - **AIS**: a chart of the vessels present while the selected recording was
-     made — tracks coloured oldest-to-newest, heading arrows, range rings round
-     the sensor, and a tap on any fix for that vessel's details and a jump back
-     to the recording covering that moment. A range selector widens the window
-     past the recording, or follows live traffic.
+     A **Live / Decisions / Favourites** selector chooses what the strip holds:
+     *Live* is every recording, following new arrivals as they land; *Decisions*
+     is the recordings a model fired on; *Favourites* is the starred ones only.
+     *Live* is also the way back — see the application clock below.
+   - **AIS**: a chart of the vessels present while the recording at the
+     application clock was made — tracks coloured oldest-to-newest, heading
+     arrows, range rings round the sensor, and a tap on any fix for that
+     vessel's details and a jump to that moment. A range selector widens the
+     window past the recording, or follows live traffic. That last one is the
+     newest *AIS* rather than the newest recording: the two pipelines land at
+     different times and are deliberately not tied together.
    - **Decisions**: every detection across the stream, grouped by recording. Tap
-     a row to open that recording in Live images.
+     a row to put the app at the moment that detection fired and open its
+     recording in Live images.
    - **Notifications**: detection and AIS-proximity alerts, newest first,
      grouped by day, paged as you scroll. Tap one for a full detail screen; when
      an alert names a single recording, **Open recording** jumps straight to it.
+
+**One application clock per stream.** Every window answers a question about a
+moment, and they all read the same one. A stream opens live — following the
+newest data as it arrives — and choosing a recording, a detection, or a position
+on the AIS chart puts the app at that instant instead. The rest of the dashboard
+follows, so swiping back to Live images returns to where you were rather than
+jumping to the latest file.
+
+Off-live is visible: the **Live** filter stops being highlighted the moment
+anything pins the clock, and tapping it is what returns the app to the feed.
+The AIS window's own **Live** range is a separate thing — it means the newest
+AIS data, which is rarely the same moment as the newest recording.
 
 **One data flow per screen, at every size.** The windows are never tiled side by
 side — each is a distinct thing to read, and splitting the screen halves both

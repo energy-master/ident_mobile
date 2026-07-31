@@ -18,6 +18,7 @@ import 'recent_sign_ins.dart';
 import 'auth.dart';
 import 'file_duration.dart';
 import 'models.dart';
+import 'stream_clock.dart';
 
 final authControllerProvider = ChangeNotifierProvider<AuthController>((ref) {
   return AuthController();
@@ -79,8 +80,20 @@ final diagnosticsProvider =
 });
 
 /// Recordings in a stream folder — the time axis for the images page.
+///
+/// Held for two minutes after the last listener goes, like [diagnosticsProvider]
+/// and for a sharper reason: this is the app's largest single fetch (thousands
+/// of rows for the bigger streams) and it is now what [activeFileProvider]
+/// resolves the clock against. Without the hold, swiping from Decisions to AIS
+/// re-reads the whole folder and the map has no recording to anchor to until it
+/// lands — which shows as the AIS window blanking on a swipe it had no reason
+/// to react to. The images page still invalidates this every minute while the
+/// clock is live, so holding it does not make it stale.
 final streamFilesProvider =
     FutureProvider.autoDispose.family<List<StreamFile>, String>((ref, folder) {
+  final link = ref.keepAlive();
+  final expiry = Timer(const Duration(minutes: 2), link.close);
+  ref.onDispose(expiry.cancel);
   return _guard(ref, (c) => c.streamFiles(folder));
 });
 
@@ -99,15 +112,60 @@ final streamFolderProvider =
   return null;
 });
 
-/// The recording currently selected in a stream's viewer.
+/// The application clock for one stream — see `stream_clock.dart`.
 ///
-/// Lifted out of the viewer so sibling data windows can follow it — the AIS map
-/// plots the traffic present during *this* recording, which only works if
-/// choosing a file in one window is visible from another. Not autoDispose: it
-/// must survive swiping between windows, and it is keyed by folder so two
-/// streams never share a selection.
+/// Not autoDispose and keyed by folder: it is the one piece of state every
+/// window in a stream reads, so it has to outlive each of them being swiped off
+/// screen, and two streams must never share a moment in time.
+class StreamClockNotifier extends StateNotifier<StreamClock> {
+  StreamClockNotifier() : super(const StreamClock.live());
+
+  /// Follow the newest data again — what the Live filter does.
+  void goLive() {
+    if (!state.isLive) state = const StreamClock.live();
+  }
+
+  /// Put the app at [at], because the operator chose something at that moment.
+  ///
+  /// Stamped UTC on the way in. Recordings, detections and AIS fixes are all
+  /// UTC at the source, but a caller reaching for `DateTime.now()` or a picker
+  /// result is not, and a local-time clock compared against a UTC recording
+  /// span is an hours-out error that still looks like a plausible time.
+  void pin(DateTime at, ClockSource source) {
+    final utc = at.toUtc();
+    if (state.at == utc && state.source == source) return;
+    state = StreamClock.pinned(utc, source);
+  }
+}
+
+final streamClockProvider =
+    StateNotifierProvider.family<StreamClockNotifier, StreamClock, String>(
+  (ref, stream) => StreamClockNotifier(),
+);
+
+/// The recording the clock is sitting on.
+///
+/// Derived rather than stored, which is the point: the viewer used to publish
+/// its selection here and the AIS map read it, so the two agreed only for as
+/// long as the viewer existed to keep saying so. Swiping the images window off
+/// screen left the map holding a recording nobody was looking at any more, and
+/// a jump made from the AIS chart itself moved nothing at all. Both windows now
+/// resolve the same clock against the same file list and cannot disagree.
+///
+/// Null is a real answer, not a loading state: [recordingAt] refuses to name a
+/// recording more than a few minutes from the clock, because a fix logged
+/// before the oldest file still on disk has no recording, and pointing at the
+/// nearest one would quietly show the operator the wrong audio.
 final activeFileProvider =
-    StateProvider.family<StreamFile?, String>((ref, folder) => null);
+    Provider.autoDispose.family<StreamFile?, String>((ref, folder) {
+  final files = ref.watch(streamFilesProvider(folder)).valueOrNull;
+  if (files == null || files.isEmpty) return null;
+
+  final at = ref.watch(streamClockProvider(folder)).at;
+  if (at == null) return files.first;
+
+  return recordingAt(at, files, ref.watch(fileDurationsProvider(folder)));
+});
 
 /// Per-file durations for a folder, keyed by filename.
 ///
