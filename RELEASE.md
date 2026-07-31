@@ -83,9 +83,14 @@ Required both in App Store Connect metadata and reachable from inside the app.
 
 ### Version and build number
 
-`pubspec.yaml` → `version: 1.0.0+1`. The `+N` build number **must increase on
+`pubspec.yaml` → `version: 1.1.0+3`. The `+N` build number **must increase on
 every upload**, even for a re-upload of an identical binary. Apple rejects a
 duplicate outright.
+
+Build numbers here keep climbing across version names rather than resetting to
+`+1` with each one. Apple only requires `+N` to be unique *within* a version
+string, so a reset is legal — but it makes two different uploads both "build 1",
+and the number stops being a straight count of what has left the machine.
 
 ### Toolchain: Xcode 26 or later
 
