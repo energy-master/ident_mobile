@@ -25,7 +25,6 @@ Future<void> showFixDetailSheet(
   required String stream,
   required VesselTrack track,
   required int fixIndex,
-  required bool popMapAfterNavigate,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -36,7 +35,6 @@ Future<void> showFixDetailSheet(
       stream: stream,
       track: track,
       fix: track.fixes[fixIndex],
-      popMapAfterNavigate: popMapAfterNavigate,
     ),
   );
 }
@@ -46,13 +44,11 @@ class _FixDetail extends ConsumerStatefulWidget {
     required this.stream,
     required this.track,
     required this.fix,
-    required this.popMapAfterNavigate,
   });
 
   final String stream;
   final VesselTrack track;
   final TrackPoint fix;
-  final bool popMapAfterNavigate;
 
   @override
   ConsumerState<_FixDetail> createState() => _FixDetailState();
@@ -67,8 +63,11 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
   ///
   /// The clock moves to the fix's own timestamp — not to the start of whatever
   /// recording covers it — so the app is at the instant the operator picked off
-  /// the chart. The dashboard then swipes itself back to the viewer via
-  /// [fileFocusRequestProvider], the same route `decisions_page.dart` takes.
+  /// the chart. The sheet closes; the map behind it does not. In the tiled
+  /// dashboard the fix request also raises [fileFocusRequestProvider] so the
+  /// Live images tile catches up, and in the maximised route the dock is how
+  /// the operator moves to another view when they are ready — nothing pops the
+  /// map on their behalf.
   ///
   /// Nothing moves when no recording covers the fix. That case is real rather
   /// than defensive — in the wider history ranges a fix can easily predate the
@@ -76,8 +75,8 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
   /// window cannot follow would leave the app claiming a moment it has no
   /// audio for.
   Future<void> _goToThisTime() async {
-    // Captured before the await and before any pop: this sheet is gone by the
-    // time the second pop runs, so its context cannot be used to find them.
+    // Captured before the await and before the pop: the sheet is gone by the
+    // time the pop runs, so its context cannot be used to find them.
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
 
@@ -105,9 +104,6 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
       ref.read(fileFocusRequestProvider(widget.stream).notifier).state =
           file.name;
       navigator.pop();
-      // Leaving the full-screen map open would hide the window we just asked to
-      // move, so the jump would look like nothing happened.
-      if (widget.popMapAfterNavigate) navigator.pop();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Could not open a recording: $e')),

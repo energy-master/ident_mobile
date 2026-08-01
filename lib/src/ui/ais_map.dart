@@ -349,7 +349,6 @@ class _AisMapState extends ConsumerState<AisMap> {
         stream: widget.stream,
         track: track,
         fixIndex: hit.fixIndex!,
-        popMapAfterNavigate: widget.fullScreen,
       );
     }
   }

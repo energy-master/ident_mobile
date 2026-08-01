@@ -30,6 +30,7 @@ import '../spectrogram_geometry.dart';
 import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
+import 'file_strip.dart';
 
 /// Where the viewer should sit after its file list is replaced.
 ///
@@ -92,7 +93,6 @@ class FileViewer extends ConsumerStatefulWidget {
 
 class _FileViewerState extends ConsumerState<FileViewer> {
   late final PageController _pages = PageController(initialPage: _startIndex);
-  final ScrollController _strip = ScrollController();
   late int _index = _startIndex;
 
   bool _showDecisions = false;
@@ -104,11 +104,6 @@ class _FileViewerState extends ConsumerState<FileViewer> {
   /// The same, for a move the clock has asked for.
   int? _clockScheduled;
 
-  /// Fixed extent per strip item, so centring the active one is arithmetic
-  /// rather than a measured guess.
-  static const double _stripItemExtent = 76;
-  static const double _stripThickness = 74;
-
   int get _lastIndex => widget.files.isEmpty ? 0 : widget.files.length - 1;
   int get _startIndex => widget.initialIndex.clamp(0, _lastIndex);
 
@@ -119,9 +114,6 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Centre the strip on the opening recording once the first frame has laid
-      // it out — before that the controller has no viewport to measure against.
-      _centreStrip(_index, animate: false);
       _alignClockToOpening();
     });
   }
@@ -258,21 +250,18 @@ class _FileViewerState extends ConsumerState<FileViewer> {
       if (_pages.hasClients && _pages.page?.round() != _index) {
         _pages.jumpToPage(_index);
       }
-      _centreStrip(_index, animate: false);
     });
   }
 
   @override
   void dispose() {
     _pages.dispose();
-    _strip.dispose();
     super.dispose();
   }
 
   void handlePageChanged(int i) {
     if (_clockScheduled == i) _clockScheduled = null;
     setState(() => _index = i);
-    _centreStrip(i);
   }
 
   /// Choosing a recording — the operator's move, so the app time goes with it.
@@ -294,20 +283,6 @@ class _FileViewerState extends ConsumerState<FileViewer> {
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
     );
-  }
-
-  void _centreStrip(int i, {bool animate = true}) {
-    if (!_strip.hasClients) return;
-    final viewport = _strip.position.viewportDimension;
-    final target = (i * _stripItemExtent) - (viewport / 2) + (_stripItemExtent / 2);
-    final clamped =
-        target.clamp(_strip.position.minScrollExtent, _strip.position.maxScrollExtent);
-    if (animate) {
-      _strip.animateTo(clamped,
-          duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic);
-    } else {
-      _strip.jumpTo(clamped);
-    }
   }
 
   Future<void> handleToggleFavourite() async {
@@ -412,31 +387,41 @@ class _FileViewerState extends ConsumerState<FileViewer> {
           onToggleDecisions: () => setState(() => _showDecisions = !_showDecisions),
         ),
         Expanded(
-          child: isLandscape ? _buildLandscape(favourites) : _buildPortrait(favourites),
+          child: isLandscape ? _buildLandscape() : _buildPortrait(),
         ),
       ],
     );
   }
 
-  Widget _buildPortrait(Set<String> favourites) {
+  Widget _buildPortrait() {
     return Column(
       children: [
         Expanded(flex: 3, child: _buildPager()),
-        SizedBox(height: _stripThickness, child: _buildStrip(favourites, vertical: false)),
+        SizedBox(height: kFileStripThickness, child: _buildStrip(vertical: false)),
         if (_showDecisions)
           Expanded(flex: 4, child: _DecisionsPanel(folder: widget.folder, file: _file)),
       ],
     );
   }
 
-  Widget _buildLandscape(Set<String> favourites) {
+  Widget _buildLandscape() {
     return Row(
       children: [
         Expanded(child: _buildPager()),
         if (_showDecisions)
           SizedBox(width: 300, child: _DecisionsPanel(folder: widget.folder, file: _file)),
-        SizedBox(width: _stripThickness, child: _buildStrip(favourites, vertical: true)),
+        SizedBox(width: kFileStripThickness, child: _buildStrip(vertical: true)),
       ],
+    );
+  }
+
+  Widget _buildStrip({required bool vertical}) {
+    return FileStrip(
+      folder: widget.folder,
+      files: widget.files,
+      activeIndex: _index,
+      vertical: vertical,
+      onTap: handleStripTap,
     );
   }
 
@@ -493,49 +478,6 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     );
   }
 
-  Widget _buildStrip(Set<String> favourites, {required bool vertical}) {
-    final client = ref.watch(apiClientProvider);
-    // One aggregated call for the whole folder — a request per thumbnail would
-    // be absurd for a decoration on a scrolling strip.
-    final counts =
-        ref.watch(decisionCountsProvider(widget.folder)).valueOrNull ?? const <String, int>{};
-    final missing = ref.read(missingThumbsProvider);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: IdentColors.surface,
-        border: Border(
-          top: vertical ? BorderSide.none : const BorderSide(color: Color(0x1FFFFFFF)),
-          left: vertical ? const BorderSide(color: Color(0x1FFFFFFF)) : BorderSide.none,
-        ),
-      ),
-      child: ListView.builder(
-        controller: _strip,
-        scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
-        // Time runs the same way the web app's waterfall runs: the newest
-        // recording sits at the end (right / bottom) and history extends back
-        // from it, so scrolling *away* from the newest means going back in
-        // time. Index 0 is still the newest, so the strip opens on it.
-        reverse: true,
-        itemExtent: _stripItemExtent,
-        itemCount: widget.files.length,
-        itemBuilder: (context, i) {
-          final f = widget.files[i];
-          return _StripItem(
-            file: f,
-            active: i == _index,
-            favourite: favourites.contains(f.name),
-            hasDecisions: (counts[f.name] ?? 0) > 0,
-            url: client?.thumbUrl(widget.folder, f).toString(),
-            headers: client?.imageHeaders ?? const {},
-            missing: missing.contains(widget.folder, f.thumbName),
-            onMissing: () => missing.add(widget.folder, f.thumbName),
-            onTap: () => handleStripTap(i),
-          );
-        },
-      ),
-    );
-  }
 }
 
 /// Time span, position, and the viewer's actions.
@@ -801,117 +743,6 @@ class _Unavailable extends StatelessWidget {
             style: const TextStyle(color: IdentColors.idle, fontSize: 12),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// One thumbnail in the strip. The active one is ringed; a starred one carries
-/// a marker so favourites stay findable while scrubbing.
-class _StripItem extends StatelessWidget {
-  const _StripItem({
-    required this.file,
-    required this.active,
-    required this.favourite,
-    required this.hasDecisions,
-    required this.url,
-    required this.headers,
-    required this.missing,
-    required this.onMissing,
-    required this.onTap,
-  });
-
-  final StreamFile file;
-  final bool active;
-  final bool favourite;
-  final bool hasDecisions;
-  final String? url;
-  final Map<String, String> headers;
-
-  /// Already known to have no snapshot. This is the one that matters for load:
-  /// a strip pass over an unrendered folder is one request per lane, and without
-  /// it every pass repeats them.
-  final bool missing;
-
-  final VoidCallback onMissing;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(4),
-          border: Border.all(
-            color: active ? IdentColors.accent : const Color(0x1FFFFFFF),
-            width: active ? 2 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: (url == null || missing)
-                        ? const ColoredBox(color: Color(0xFF11151D))
-                        : CachedNetworkImage(
-                            imageUrl: url!,
-                            httpHeaders: headers,
-                            fit: BoxFit.cover,
-                            width: double.infinity,
-                            placeholder: (_, _) => const ColoredBox(color: Color(0xFF11151D)),
-                            errorWidget: (_, _, error) {
-                              if (_isMissingSnapshot(error)) onMissing();
-                              return const ColoredBox(color: Color(0xFF11151D));
-                            },
-                          ),
-                  ),
-                  // Marks a recording that fired, so detections are findable
-                  // while scrubbing without opening each one.
-                  if (hasDecisions)
-                    Positioned(
-                      top: 3,
-                      right: 3,
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF3B30),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0x99000000), width: 0.5),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (favourite) ...[
-                    const Icon(Icons.star, size: 9, color: IdentColors.warn),
-                    const SizedBox(width: 2),
-                  ],
-                  Text(
-                    formatUtcHhmm(file.startTime),
-                    style: TextStyle(
-                      fontSize: 9.5,
-                      color: active ? IdentColors.textPrimary : IdentColors.textSecondary,
-                      fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

@@ -39,6 +39,7 @@ import '../providers.dart';
 import '../theme.dart';
 import '../time_format.dart';
 import 'ais_map.dart';
+import 'maximised_panel.dart';
 
 /// Fallback span for a recording whose duration could not be estimated.
 const _assumedDuration = Duration(minutes: 15);
@@ -95,9 +96,21 @@ String aisCountLabel(List<Vessel>? vessels, AisHistory history) {
 }
 
 class AisPage extends ConsumerStatefulWidget {
-  const AisPage({super.key, required this.stream});
+  const AisPage({
+    super.key,
+    required this.stream,
+    this.fullGestureMap = false,
+  });
 
   final String stream;
+
+  /// True when this page owns its whole route — every gesture reaches the map
+  /// (one-finger pan included) and the expand button is hidden, because the
+  /// map is already at its largest.
+  ///
+  /// The dashboard's embedded AIS window leaves this false: a one-finger swipe
+  /// belongs to the ring, not to the map.
+  final bool fullGestureMap;
 
   @override
   ConsumerState<AisPage> createState() => _AisPageState();
@@ -212,20 +225,22 @@ class _AisPageState extends ConsumerState<AisPage> {
                 sensor: sensor,
                 recordingStart: start,
                 recordingEnd: end,
-                fullScreen: false,
+                fullScreen: widget.fullGestureMap,
                 refitKey: viewKey,
-                onExpand: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => _FullScreenMap(
-                      stream: stream,
-                      vessels: drawn,
-                      sensor: sensor,
-                      start: start,
-                      end: end,
-                      refitKey: viewKey,
-                    ),
-                  ),
-                ),
+                // In the max screen the expand button is redundant — the map
+                // is already at its largest — so it is hidden by leaving
+                // onExpand null. See AisMap: the button only draws when
+                // onExpand is non-null and the map is not itself full-screen.
+                onExpand: widget.fullGestureMap
+                    ? null
+                    : () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => MaximisedPanelScreen(
+                              stream: stream,
+                              initial: DashboardPanel.ais,
+                            ),
+                          ),
+                        ),
               ),
             AsyncError(:final error) => _Error(
                 message: '$error',
@@ -407,46 +422,6 @@ class _HistoryChips extends ConsumerWidget {
             },
           ),
       ],
-    );
-  }
-}
-
-/// Full-screen map: nothing competes for gestures here, so all are enabled.
-class _FullScreenMap extends StatelessWidget {
-  const _FullScreenMap({
-    required this.stream,
-    required this.vessels,
-    required this.sensor,
-    required this.start,
-    required this.end,
-    required this.refitKey,
-  });
-
-  final String stream;
-  final List<Vessel> vessels;
-  final Sensor? sensor;
-  final DateTime start;
-  final DateTime end;
-  final Object refitKey;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          '${formatUtcDate(start)} · ${formatTimeSpan(start, end)}',
-          style: const TextStyle(fontSize: 13),
-        ),
-      ),
-      body: AisMap(
-        stream: stream,
-        vessels: vessels,
-        sensor: sensor,
-        recordingStart: start,
-        recordingEnd: end,
-        fullScreen: true,
-        refitKey: refitKey,
-      ),
     );
   }
 }

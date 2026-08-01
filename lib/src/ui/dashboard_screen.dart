@@ -1,22 +1,23 @@
 /// One stream's dashboard.
 ///
-/// Four data windows, reached by swiping: **Live images**, **AIS**,
-/// **Decisions** and **Notifications**. There is no tab bar — the windows are
-/// siblings and a menu across the top would cost vertical space on every screen
-/// to say something a swipe already says. The current window's name lives in the
-/// app bar, which exists anyway, alongside a row of dots so the set stays
-/// discoverable without a control of its own.
+/// Four data windows: **Live images**, **AIS**, **Decisions** and
+/// **Notifications**. Two layouts, chosen from the screen's short side rather
+/// than from the OS:
 ///
-/// **The windows form a ring, not a row.** Swiping past either end carries on
-/// into the other, so no window is ever more than two swipes away and neither
-/// end is a dead stop. Notifications sits last precisely because of that: it is
-/// the window most often wanted from a standing start, and putting it at the end
-/// of the ring puts it one backward swipe from Live images.
+///   * **Phone (short side < 600 dp).** The windows form a ring reached by
+///     swiping — no window is ever more than two swipes away and neither end
+///     is a dead stop. Notifications sits last precisely because of that: it
+///     is the window most often wanted from a standing start, and putting it
+///     at the end of the ring puts it one backward swipe from Live images.
 ///
-/// **One data flow per screen, at every size.** The windows are never tiled
-/// side by side, even where a tablet has the room: each is a distinct thing to
-/// read, and splitting the screen halves both without making either easier to
-/// follow.
+///   * **iPad (short side ≥ 600 dp).** The four windows are tiled in a 2×2
+///     grid so a glance takes in all of them at once. Each tile carries a ⤢
+///     button that opens the panel full-screen, with a floating dock to
+///     switch between maximised panels or return to the grid.
+///
+/// The split is by device size, not device family. Split-screen on an iPad can
+/// leave this app in a phone-shaped column, and that column earns nothing from
+/// four postage stamps.
 library;
 
 import 'package:flutter/material.dart';
@@ -27,7 +28,10 @@ import '../theme.dart';
 import 'ais_page.dart';
 import 'decisions_page.dart';
 import 'images_page.dart';
+import 'layout.dart';
+import 'maximised_panel.dart';
 import 'notifications_page.dart';
+import 'panel_frame.dart';
 import 'streams_screen.dart' show DiagnosticsDetail;
 
 /// The page to scroll to in order to reach [window] from [current].
@@ -128,14 +132,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   /// The images window, which owns the viewer a focus request targets.
   static const _imagesPage = 0;
 
+  /// Open a panel full-screen. Used by every tile in the tablet grid.
+  void handleMaximise(DashboardPanel panel) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MaximisedPanelScreen(
+          stream: widget.stream,
+          initial: panel,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Another window asked to show a recording — slide across to the viewer.
-    // The viewer itself handles scrolling its strip to the file; this only
-    // moves the dashboard, so the two animations run together rather than the
-    // user arriving at an already-settled screen.
+    final tablet = isTabletLayout(context);
+
+    // Another window asked to show a recording — on phone that slides the
+    // dashboard ring across to the viewer. On tablet all four windows are
+    // already in view, so there is nowhere to slide to and the tile handles
+    // the focus itself.
     ref.listen(fileFocusRequestProvider(widget.stream), (_, next) {
-      if (next != null) goToWindow(_imagesPage);
+      if (next != null && !tablet) goToWindow(_imagesPage);
     });
 
     return Scaffold(
@@ -148,16 +166,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 15),
             ),
-            Row(
-              children: [
-                Text(
-                  _titles[_window],
-                  style: const TextStyle(fontSize: 11.5, color: IdentColors.textSecondary),
-                ),
-                const SizedBox(width: 8),
-                _Dots(count: _titles.length, active: _window),
-              ],
-            ),
+            // Dots + current window name only make sense in the ring. In the
+            // grid every window is on screen, so the app bar is just a name.
+            if (!tablet)
+              Row(
+                children: [
+                  Text(
+                    _titles[_window],
+                    style: const TextStyle(
+                        fontSize: 11.5, color: IdentColors.textSecondary),
+                  ),
+                  const SizedBox(width: 8),
+                  _Dots(count: _titles.length, active: _window),
+                ],
+              ),
           ],
         ),
         actions: [
@@ -170,22 +192,87 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
       ),
       body: SafeArea(
         top: false,
-        // Unbounded and built on demand, which is what closes the ring: page
-        // 4003 is the same window as 3999, so there is no end to stop at in
-        // either direction. Nothing is lost by building rather than listing the
-        // four — a PageView keeps no cache extent, so the window you are not
-        // looking at was already being disposed and rebuilt.
-        child: PageView.builder(
-          controller: _pages,
-          onPageChanged: (i) => setState(() => _page = i),
-          itemBuilder: (context, i) => switch (i % _titles.length) {
-            0 => ImagesPage(stream: widget.stream),
-            1 => AisPage(stream: widget.stream),
-            2 => DecisionsPage(stream: widget.stream),
-            _ => NotificationsPage(stream: widget.stream),
-          },
-        ),
+        child: tablet ? _buildGrid() : _buildRing(),
       ),
+    );
+  }
+
+  /// Phone layout: the swipe ring, unchanged.
+  Widget _buildRing() {
+    // Unbounded and built on demand, which is what closes the ring: page 4003
+    // is the same window as 3999, so there is no end to stop at in either
+    // direction. Nothing is lost by building rather than listing the four —
+    // a PageView keeps no cache extent, so the window you are not looking at
+    // was already being disposed and rebuilt.
+    return PageView.builder(
+      controller: _pages,
+      onPageChanged: (i) => setState(() => _page = i),
+      itemBuilder: (context, i) => switch (i % _titles.length) {
+        0 => ImagesPage(stream: widget.stream),
+        1 => AisPage(stream: widget.stream),
+        2 => DecisionsPage(stream: widget.stream),
+        _ => NotificationsPage(stream: widget.stream),
+      },
+    );
+  }
+
+  /// iPad layout: all four windows tiled at once.
+  ///
+  /// LayoutBuilder rather than a fixed aspect ratio because the tile grid has
+  /// to fit exactly the available space (the app bar and the safe-area insets
+  /// vary), and a GridView with `childAspectRatio` would either scroll or
+  /// leave a gap. The AIS window in particular earns nothing from being
+  /// letterboxed, and the notifications list is a wasted half-column at any
+  /// aspect ratio the tiles would round to.
+  Widget _buildGrid() {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const gap = 8.0;
+          final w = (constraints.maxWidth - gap) / 2;
+          final h = (constraints.maxHeight - gap) / 2;
+          return Column(
+            children: [
+              SizedBox(
+                height: h,
+                child: Row(
+                  children: [
+                    SizedBox(width: w, child: _tile(DashboardPanel.liveImages)),
+                    const SizedBox(width: gap),
+                    SizedBox(width: w, child: _tile(DashboardPanel.ais)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: gap),
+              SizedBox(
+                height: h,
+                child: Row(
+                  children: [
+                    SizedBox(width: w, child: _tile(DashboardPanel.decisions)),
+                    const SizedBox(width: gap),
+                    SizedBox(width: w, child: _tile(DashboardPanel.notifications)),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _tile(DashboardPanel panel) {
+    final child = switch (panel) {
+      DashboardPanel.liveImages => ImagesPage(stream: widget.stream),
+      DashboardPanel.ais => AisPage(stream: widget.stream),
+      DashboardPanel.decisions => DecisionsPage(stream: widget.stream),
+      DashboardPanel.notifications => NotificationsPage(stream: widget.stream),
+    };
+    return PanelFrame(
+      title: panel.title,
+      onMaximise: () => handleMaximise(panel),
+      child: child,
     );
   }
 }
