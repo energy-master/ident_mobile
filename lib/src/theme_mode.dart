@@ -28,7 +28,7 @@ class ThemeModeStore {
       return _decode(await _storage.read(key: _key));
     } catch (_) {
       // An unreadable store costs the user their preference, nothing more.
-      return ThemeMode.system;
+      return ThemeMode.dark;
     }
   }
 
@@ -45,14 +45,14 @@ String _encode(ThemeMode m) => switch (m) {
 
 ThemeMode _decode(String? raw) => switch (raw) {
       'light' => ThemeMode.light,
-      'dark' => ThemeMode.dark,
-      _ => ThemeMode.system,
+      'system' => ThemeMode.system,
+      _ => ThemeMode.dark,
     };
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   ThemeModeNotifier([ThemeModeStore? store])
       : _store = store ?? ThemeModeStore(),
-        super(ThemeMode.system) {
+        super(ThemeMode.dark) {
     _load();
   }
 
