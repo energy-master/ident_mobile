@@ -28,7 +28,7 @@ Future<void> showFixDetailSheet(
 }) {
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: IdentColors.surface,
+    backgroundColor: identColors(context).surface,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => _FixDetail(
@@ -115,6 +115,7 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final fix = widget.fix;
     final identity = [
       if (_vessel.type != null) _vessel.type!,
@@ -150,8 +151,8 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
               Expanded(
                 child: Text(
                   _vessel.label,
-                  style: const TextStyle(
-                    color: IdentColors.textPrimary,
+                  style: TextStyle(
+                    color: palette.textPrimary,
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                   ),
@@ -159,10 +160,10 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
               ),
               Text(
                 'MMSI ${_vessel.mmsi}',
-                style: const TextStyle(
-                  color: IdentColors.textSecondary,
+                style: TextStyle(
+                  color: palette.textSecondary,
                   fontSize: 11.5,
-                  fontFeatures: [FontFeature.tabularFigures()],
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
@@ -171,8 +172,8 @@ class _FixDetailState extends ConsumerState<_FixDetail> {
             const SizedBox(height: 4),
             Text(
               identity,
-              style: const TextStyle(
-                color: IdentColors.textSecondary,
+              style: TextStyle(
+                color: palette.textSecondary,
                 fontSize: 12.5,
               ),
             ),
@@ -237,7 +238,7 @@ Future<void> showVesselListSheet(
 }) {
   return showModalBottomSheet<void>(
     context: context,
-    backgroundColor: IdentColors.surface,
+    backgroundColor: identColors(context).surface,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (_) => DraggableScrollableSheet(
@@ -273,6 +274,7 @@ class _VesselList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = identColors(context);
     final view = ref.watch(aisViewProvider(stream));
     final notifier = ref.read(aisViewProvider(stream).notifier);
 
@@ -283,11 +285,11 @@ class _VesselList extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(20, 0, 12, 6),
           child: Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
                   'Vessels',
                   style: TextStyle(
-                    color: IdentColors.textPrimary,
+                    color: palette.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -310,11 +312,11 @@ class _VesselList extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Showing one vessel only.',
                     style: TextStyle(
-                      color: IdentColors.warn,
+                      color: palette.warn,
                       fontSize: 12,
                     ),
                   ),
@@ -344,8 +346,8 @@ class _VesselList extends ConsumerWidget {
                     // The web map flags vessels that came within 5 km of the
                     // sensor; those are the ones a detection could be about.
                     color: near.contains(t.mmsi)
-                        ? IdentColors.accent
-                        : IdentColors.textPrimary,
+                        ? palette.accent
+                        : palette.textPrimary,
                     fontSize: 13.5,
                     fontWeight: near.contains(t.mmsi)
                         ? FontWeight.w600
@@ -357,8 +359,8 @@ class _VesselList extends ConsumerWidget {
                     if (t.vessel.type != null) t.vessel.type!,
                     '${t.fixes.length} fix${t.fixes.length == 1 ? '' : 'es'}',
                   ].join(' · '),
-                  style: const TextStyle(
-                    color: IdentColors.textSecondary,
+                  style: TextStyle(
+                    color: palette.textSecondary,
                     fontSize: 11.5,
                   ),
                 ),
@@ -368,8 +370,8 @@ class _VesselList extends ConsumerWidget {
                     IconButton(
                       icon: const Icon(Icons.filter_alt_outlined, size: 18),
                       color: view.isolatedMmsi == t.mmsi
-                          ? IdentColors.accent
-                          : IdentColors.textSecondary,
+                          ? palette.accent
+                          : palette.textSecondary,
                       tooltip: 'Track only',
                       onPressed: () => notifier.isolate(
                         view.isolatedMmsi == t.mmsi ? null : t.mmsi,
@@ -421,6 +423,7 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
@@ -430,8 +433,8 @@ class _Row extends StatelessWidget {
             width: 82,
             child: Text(
               label,
-              style: const TextStyle(
-                color: IdentColors.textSecondary,
+              style: TextStyle(
+                color: palette.textSecondary,
                 fontSize: 12.5,
               ),
             ),
@@ -439,10 +442,10 @@ class _Row extends StatelessWidget {
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(
-                color: IdentColors.textPrimary,
+              style: TextStyle(
+                color: palette.textPrimary,
                 fontSize: 12.5,
-                fontFeatures: [FontFeature.tabularFigures()],
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
           ),

@@ -142,8 +142,8 @@ class _DayHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 6),
       child: Text(
         t == null ? '' : formatDayLabel(t).toUpperCase(),
-        style: const TextStyle(
-          color: IdentColors.textSecondary,
+        style: TextStyle(
+          color: identColors(context).textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w700,
           letterSpacing: 0.8,
@@ -166,6 +166,7 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final t = item.sentAtUtc;
     final subtitleParts = <String>[
       if (showStream && item.streamFolder.isNotEmpty) item.streamFolder,
@@ -195,8 +196,8 @@ class _NotificationTile extends StatelessWidget {
                         : _fallbackTitle(item.kind),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: IdentColors.textPrimary,
+                    style: TextStyle(
+                      color: palette.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
@@ -208,8 +209,8 @@ class _NotificationTile extends StatelessWidget {
                       item.detail!,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: IdentColors.textSecondary,
+                      style: TextStyle(
+                        color: palette.textSecondary,
                         fontSize: 12.5,
                         height: 1.35,
                       ),
@@ -221,14 +222,14 @@ class _NotificationTile extends StatelessWidget {
                       // Marks the alerts that can be opened straight to their
                       // recording, so the ones that can't don't look broken.
                       if (item.hasFile) ...[
-                        const Icon(Icons.graphic_eq, size: 11, color: IdentColors.accent),
+                        Icon(Icons.graphic_eq, size: 11, color: palette.accent),
                         const SizedBox(width: 4),
                       ],
                       Flexible(
                         child: Text(
                           subtitleParts.join(' · '),
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: IdentColors.idle, fontSize: 11.5),
+                          style: TextStyle(color: palette.idle, fontSize: 11.5),
                         ),
                       ),
                     ],
@@ -236,7 +237,7 @@ class _NotificationTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: IdentColors.idle),
+            Icon(Icons.chevron_right, size: 18, color: palette.idle),
           ],
         ),
       ),
@@ -258,9 +259,10 @@ class _KindIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     // A failed dispatch is the exception worth flagging: the alert fired but the
     // user may never have received it, so it must not look like a normal row.
-    final colour = success ? IdentColors.accent : IdentColors.error;
+    final colour = success ? palette.accent : palette.error;
     final icon = !success
         ? Icons.error_outline
         : switch (kind) {
@@ -302,7 +304,7 @@ class _Footer extends StatelessWidget {
       child: Center(
         child: Text(
           '$count notification${count == 1 ? '' : 's'}',
-          style: const TextStyle(color: IdentColors.idle, fontSize: 12),
+          style: TextStyle(color: identColors(context).idle, fontSize: 12),
         ),
       ),
     );
@@ -314,19 +316,20 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 100),
-        Icon(Icons.notifications_off_outlined, size: 44, color: IdentColors.idle),
-        SizedBox(height: 14),
+      children: [
+        const SizedBox(height: 100),
+        Icon(Icons.notifications_off_outlined, size: 44, color: palette.idle),
+        const SizedBox(height: 14),
         Center(
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               'No notifications yet.\nAlerts appear here when a subscribed model detects something.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
           ),
         ),
@@ -343,17 +346,18 @@ class _Error extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(32),
       children: [
         const SizedBox(height: 60),
-        const Icon(Icons.cloud_off, size: 44, color: IdentColors.idle),
+        Icon(Icons.cloud_off, size: 44, color: palette.idle),
         const SizedBox(height: 14),
         Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: IdentColors.textSecondary),
+          style: TextStyle(color: palette.textSecondary),
         ),
         const SizedBox(height: 18),
         Center(

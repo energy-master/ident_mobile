@@ -88,6 +88,7 @@ class NotificationDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = identColors(context);
     final t = item.sentAtUtc;
 
     return Scaffold(
@@ -111,18 +112,18 @@ class NotificationDetailScreen extends ConsumerWidget {
               margin: const EdgeInsets.only(bottom: 16),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: IdentColors.error.withValues(alpha: 0.12),
-                border: Border.all(color: IdentColors.error.withValues(alpha: 0.5)),
+                color: palette.error.withValues(alpha: 0.12),
+                border: Border.all(color: palette.error.withValues(alpha: 0.5)),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.error_outline, color: IdentColors.error, size: 18),
-                  SizedBox(width: 10),
+                  Icon(Icons.error_outline, color: palette.error, size: 18),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'This alert was raised but could not be delivered.',
-                      style: TextStyle(color: IdentColors.error, fontSize: 13),
+                      style: TextStyle(color: palette.error, fontSize: 13),
                     ),
                   ),
                 ],
@@ -131,8 +132,8 @@ class NotificationDetailScreen extends ConsumerWidget {
 
           Text(
             item.subject?.trim().isNotEmpty == true ? item.subject! : 'Notification',
-            style: const TextStyle(
-              color: IdentColors.textPrimary,
+            style: TextStyle(
+              color: palette.textPrimary,
               fontSize: 19,
               fontWeight: FontWeight.w600,
               height: 1.3,
@@ -142,7 +143,7 @@ class NotificationDetailScreen extends ConsumerWidget {
             const SizedBox(height: 6),
             Text(
               '${formatUtcStamp(t)} · ${formatAge(DateTime.now().toUtc().difference(t))}',
-              style: const TextStyle(color: IdentColors.textSecondary, fontSize: 13),
+              style: TextStyle(color: palette.textSecondary, fontSize: 13),
             ),
           ],
 
@@ -151,14 +152,14 @@ class NotificationDetailScreen extends ConsumerWidget {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: IdentColors.surface,
+                color: palette.surface,
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0x2AFFFFFF)),
               ),
               child: SelectableText(
                 item.detail!,
-                style: const TextStyle(
-                  color: IdentColors.textPrimary,
+                style: TextStyle(
+                  color: palette.textPrimary,
                   fontSize: 14,
                   height: 1.5,
                 ),
@@ -181,10 +182,10 @@ class NotificationDetailScreen extends ConsumerWidget {
           ],
 
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'DETAILS',
             style: TextStyle(
-              color: IdentColors.textSecondary,
+              color: palette.textSecondary,
               fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.8,
@@ -218,6 +219,7 @@ class _Row extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 7),
       child: Row(
@@ -227,13 +229,13 @@ class _Row extends StatelessWidget {
             width: 96,
             child: Text(
               label,
-              style: const TextStyle(color: IdentColors.textSecondary, fontSize: 13),
+              style: TextStyle(color: palette.textSecondary, fontSize: 13),
             ),
           ),
           Expanded(
             child: SelectableText(
               value.isEmpty ? '—' : value,
-              style: const TextStyle(color: IdentColors.textPrimary, fontSize: 13),
+              style: TextStyle(color: palette.textPrimary, fontSize: 13),
             ),
           ),
         ],

@@ -131,20 +131,21 @@ class _FileHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final t = parseFileStartTime(fileName);
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
       child: Row(
         children: [
-          const Icon(Icons.graphic_eq, size: 13, color: IdentColors.accent),
+          Icon(Icons.graphic_eq, size: 13, color: palette.accent),
           const SizedBox(width: 7),
           Expanded(
             child: Text(
               t == null ? fileName : formatUtcStamp(t),
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: IdentColors.textSecondary,
+              style: TextStyle(
+                color: palette.textSecondary,
                 fontSize: 11.5,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.4,
@@ -165,6 +166,7 @@ class _DecisionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final score = decision.score;
     // Judge against the model's own threshold — an absolute scale would misread
     // models tuned differently.
@@ -182,7 +184,7 @@ class _DecisionRow extends StatelessWidget {
               width: 3,
               height: 32,
               decoration: BoxDecoration(
-                color: strong ? IdentColors.ok : IdentColors.warn,
+                color: strong ? palette.ok : palette.warn,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -193,11 +195,11 @@ class _DecisionRow extends StatelessWidget {
                 children: [
                   Text(
                     '${decision.tmin.toStringAsFixed(1)}s – ${decision.tmax.toStringAsFixed(1)}s',
-                    style: const TextStyle(
-                      color: IdentColors.textPrimary,
+                    style: TextStyle(
+                      color: palette.textPrimary,
                       fontSize: 13.5,
                       fontWeight: FontWeight.w600,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                   Text(
@@ -207,7 +209,7 @@ class _DecisionRow extends StatelessWidget {
                       if (decision.isSidecar) 'sidecar',
                     ].join(' · '),
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: IdentColors.textSecondary, fontSize: 11.5),
+                    style: TextStyle(color: palette.textSecondary, fontSize: 11.5),
                   ),
                 ],
               ),
@@ -216,7 +218,7 @@ class _DecisionRow extends StatelessWidget {
               Text(
                 score.toStringAsFixed(2),
                 style: TextStyle(
-                  color: strong ? IdentColors.ok : IdentColors.textSecondary,
+                  color: strong ? palette.ok : palette.textSecondary,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w700,
                   fontFeatures: const [FontFeature.tabularFigures()],
@@ -225,7 +227,7 @@ class _DecisionRow extends StatelessWidget {
               const SizedBox(width: 6),
             ],
             if (onTap != null)
-              const Icon(Icons.chevron_right, size: 18, color: IdentColors.idle),
+              Icon(Icons.chevron_right, size: 18, color: palette.idle),
           ],
         ),
       ),
@@ -248,7 +250,7 @@ class _Footer extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 20),
       child: Center(
-        child: Text(text, style: const TextStyle(color: IdentColors.idle, fontSize: 12)),
+        child: Text(text, style: TextStyle(color: identColors(context).idle, fontSize: 12)),
       ),
     );
   }
@@ -259,20 +261,21 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 100),
-        Icon(Icons.rule, size: 44, color: IdentColors.idle),
-        SizedBox(height: 14),
+      children: [
+        const SizedBox(height: 100),
+        Icon(Icons.rule, size: 44, color: palette.idle),
+        const SizedBox(height: 14),
         Center(
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               'No detections recorded on this stream yet.\n'
               'They appear here once a subscribed model fires.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
           ),
         ),
@@ -289,17 +292,18 @@ class _Error extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(32),
       children: [
         const SizedBox(height: 60),
-        const Icon(Icons.cloud_off, size: 44, color: IdentColors.idle),
+        Icon(Icons.cloud_off, size: 44, color: palette.idle),
         const SizedBox(height: 14),
         Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: IdentColors.textSecondary),
+          style: TextStyle(color: palette.textSecondary),
         ),
         const SizedBox(height: 18),
         Center(child: FilledButton.tonal(onPressed: onRetry, child: const Text('Try again'))),

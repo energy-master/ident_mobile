@@ -19,6 +19,7 @@ import '../api_client.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../theme.dart';
+import '../theme_mode.dart';
 import '../time_format.dart';
 import 'dashboard_screen.dart';
 import 'ident_logo.dart';
@@ -26,6 +27,21 @@ import 'notifications_page.dart';
 import 'status_dot.dart';
 
 const _pollInterval = Duration(seconds: 30);
+
+/// The icon that stands for what the theme selector will *do next*, not what
+/// it is on now — so an operator can see at a glance what the next tap gives
+/// them without having to remember the cycle.
+IconData _themeIcon(ThemeMode mode) => switch (mode) {
+      ThemeMode.system => Icons.light_mode_outlined,
+      ThemeMode.light => Icons.dark_mode_outlined,
+      ThemeMode.dark => Icons.brightness_auto_outlined,
+    };
+
+String _themeTooltip(ThemeMode mode) => switch (mode) {
+      ThemeMode.system => 'Switch to light mode (currently follows system)',
+      ThemeMode.light => 'Switch to dark mode',
+      ThemeMode.dark => 'Switch to system theme',
+    };
 
 class StreamsScreen extends ConsumerStatefulWidget {
   const StreamsScreen({super.key});
@@ -110,7 +126,7 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: IdentColors.surface,
+        backgroundColor: identColors(ctx).surface,
         title: const Text('Sign out?'),
         content: const Text('This device will need to sign in again.'),
         actions: [
@@ -124,14 +140,26 @@ class _StreamsScreenState extends ConsumerState<StreamsScreen> with WidgetsBindi
     }
   }
 
+  /// One tap cycles System → Light → Dark → System.
+  void handleCycleTheme() {
+    ref.read(themeModeProvider.notifier).cycle();
+  }
+
   @override
   Widget build(BuildContext context) {
     final streams = ref.watch(streamsProvider);
+
+    final themeMode = ref.watch(themeModeProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const _Branding(),
         actions: [
+          IconButton(
+            icon: Icon(_themeIcon(themeMode)),
+            tooltip: _themeTooltip(themeMode),
+            onPressed: handleCycleTheme,
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_outlined),
             tooltip: 'All notifications',
@@ -212,6 +240,7 @@ class _StreamCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final diag = ref.watch(diagnosticsProvider(name));
+    final palette = identColors(context);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -228,8 +257,8 @@ class _StreamCard extends ConsumerWidget {
                     child: Text(
                       name,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: IdentColors.textPrimary,
+                      style: TextStyle(
+                        color: palette.textPrimary,
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -238,7 +267,7 @@ class _StreamCard extends ConsumerWidget {
                   const SizedBox(width: 8),
                   _Dots(diag: diag),
                   const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right, size: 20, color: IdentColors.textSecondary),
+                  Icon(Icons.chevron_right, size: 20, color: palette.textSecondary),
                 ],
               ),
               const SizedBox(height: 2),
@@ -250,7 +279,7 @@ class _StreamCard extends ConsumerWidget {
                   icon: Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 18),
                   label: const Text('Diagnostics'),
                   style: TextButton.styleFrom(
-                    foregroundColor: IdentColors.textSecondary,
+                    foregroundColor: palette.textSecondary,
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     minimumSize: const Size(0, 32),
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -292,7 +321,7 @@ class _Dots extends StatelessWidget {
             ],
           ],
         ),
-      AsyncError() => const Icon(Icons.cloud_off, size: 16, color: IdentColors.idle),
+      AsyncError() => Icon(Icons.cloud_off, size: 16, color: identColors(context).idle),
       _ => const SizedBox(
           height: 12,
           width: 12,
@@ -311,7 +340,7 @@ class _LiveTime extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(color: IdentColors.textSecondary, fontSize: 12);
+    final style = TextStyle(color: identColors(context).textSecondary, fontSize: 12);
 
     return switch (diag) {
       AsyncData(:final value) => Builder(builder: (_) {
@@ -324,11 +353,11 @@ class _LiveTime extends StatelessWidget {
           }
           final age = files?.newestAgeMin;
           if (age != null) parts.add(formatAgeMinutes(age));
-          if (parts.isEmpty) return const Text('No recordings yet', style: style);
+          if (parts.isEmpty) return Text('No recordings yet', style: style);
           return Text(parts.join(' · '), style: style);
         }),
-      AsyncError() => const Text('Diagnostics unavailable', style: style),
-      _ => const Text('Loading…', style: style),
+      AsyncError() => Text('Diagnostics unavailable', style: style),
+      _ => Text('Loading…', style: style),
     };
   }
 }
@@ -341,6 +370,7 @@ class DiagnosticsDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return switch (diag) {
       AsyncData(:final value) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -362,16 +392,16 @@ class DiagnosticsDetail extends StatelessWidget {
                         children: [
                           Text(
                             c.label,
-                            style: const TextStyle(
-                              color: IdentColors.textPrimary,
+                            style: TextStyle(
+                              color: palette.textPrimary,
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           Text(
                             c.summary,
-                            style: const TextStyle(
-                              color: IdentColors.textSecondary,
+                            style: TextStyle(
+                              color: palette.textSecondary,
                               fontSize: 12,
                               height: 1.35,
                             ),
@@ -386,7 +416,7 @@ class DiagnosticsDetail extends StatelessWidget {
         ),
       AsyncError(:final error) => Text(
           '$error',
-          style: const TextStyle(color: IdentColors.error, fontSize: 12),
+          style: TextStyle(color: palette.error, fontSize: 12),
         ),
       _ => const Padding(
           padding: EdgeInsets.symmetric(vertical: 8),
@@ -405,19 +435,20 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 120),
-        Icon(Icons.waves, size: 48, color: IdentColors.idle),
-        SizedBox(height: 16),
+      children: [
+        const SizedBox(height: 120),
+        Icon(Icons.waves, size: 48, color: palette.idle),
+        const SizedBox(height: 16),
         Center(
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
               'No streams on your account yet.\nStreams granted to you will appear here.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
           ),
         ),
@@ -434,17 +465,18 @@ class _ErrorState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(32),
       children: [
         const SizedBox(height: 80),
-        const Icon(Icons.cloud_off, size: 48, color: IdentColors.idle),
+        Icon(Icons.cloud_off, size: 48, color: palette.idle),
         const SizedBox(height: 16),
         Text(
           message,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: IdentColors.textSecondary),
+          style: TextStyle(color: palette.textSecondary),
         ),
         const SizedBox(height: 20),
         Center(

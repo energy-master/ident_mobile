@@ -163,11 +163,12 @@ class _FileStripState extends ConsumerState<FileStrip> {
     final missing = ref.read(missingThumbsProvider);
 
     final vertical = widget.vertical;
-    final border = BorderSide(color: const Color(0x1FFFFFFF));
+    final palette = identColors(context);
+    final border = BorderSide(color: palette.hairline);
 
     return Container(
       decoration: BoxDecoration(
-        color: widget.background ?? IdentColors.surface,
+        color: widget.background ?? palette.surface,
         border: Border(
           top: vertical ? BorderSide.none : border,
           left: vertical ? border : BorderSide.none,
@@ -230,6 +231,7 @@ class _StripItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -237,7 +239,7 @@ class _StripItem extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(4),
           border: Border.all(
-            color: active ? IdentColors.accent : const Color(0x1FFFFFFF),
+            color: active ? palette.accent : palette.hairline,
             width: active ? 2 : 1,
           ),
         ),
@@ -287,14 +289,14 @@ class _StripItem extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   if (favourite) ...[
-                    const Icon(Icons.star, size: 9, color: IdentColors.warn),
+                    Icon(Icons.star, size: 9, color: palette.warn),
                     const SizedBox(width: 2),
                   ],
                   Text(
                     formatUtcHhmm(file.startTime),
                     style: TextStyle(
                       fontSize: 9.5,
-                      color: active ? IdentColors.textPrimary : IdentColors.textSecondary,
+                      color: active ? palette.textPrimary : palette.textSecondary,
                       fontWeight: active ? FontWeight.w700 : FontWeight.w400,
                     ),
                   ),

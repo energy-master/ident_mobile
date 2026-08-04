@@ -101,9 +101,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
   /// Diagnostics is a sheet rather than a fourth window: it is a health check
   /// glanced at, not a feed read alongside the others.
   void handleShowDiagnostics() {
+    final palette = identColors(context);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: IdentColors.surface,
+      backgroundColor: palette.surface,
       showDragHandle: true,
       builder: (ctx) => Padding(
         padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
@@ -114,8 +115,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
             children: [
               Text(
                 widget.stream,
-                style: const TextStyle(
-                  color: IdentColors.textPrimary,
+                style: TextStyle(
+                  color: palette.textPrimary,
                   fontWeight: FontWeight.w600,
                   fontSize: 15,
                 ),
@@ -173,8 +174,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen> {
                 children: [
                   Text(
                     _titles[_window],
-                    style: const TextStyle(
-                        fontSize: 11.5, color: IdentColors.textSecondary),
+                    style: TextStyle(
+                        fontSize: 11.5, color: identColors(context).textSecondary),
                   ),
                   const SizedBox(width: 8),
                   _Dots(count: _titles.length, active: _window),
@@ -286,6 +287,7 @@ class _Dots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Semantics(
       label: 'Window ${active + 1} of $count',
       child: Row(
@@ -297,7 +299,7 @@ class _Dots extends StatelessWidget {
               height: 5,
               margin: const EdgeInsets.only(right: 3),
               decoration: BoxDecoration(
-                color: i == active ? IdentColors.accent : IdentColors.idle,
+                color: i == active ? palette.accent : palette.idle,
                 borderRadius: BorderRadius.circular(3),
               ),
             ),

@@ -42,11 +42,12 @@ class PanelFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       decoration: BoxDecoration(
-        color: IdentColors.shell,
+        color: palette.shell,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0x2AFFFFFF)),
+        border: Border.all(color: palette.hairline),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -79,11 +80,12 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-      decoration: const BoxDecoration(
-        color: IdentColors.surface,
-        border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(bottom: BorderSide(color: palette.hairline)),
       ),
       child: Row(
         children: [
@@ -91,8 +93,8 @@ class _Header extends StatelessWidget {
             child: Text(
               title,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: IdentColors.textSecondary,
+              style: TextStyle(
+                color: palette.textSecondary,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0.8,

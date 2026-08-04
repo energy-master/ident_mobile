@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'src/auth.dart';
 import 'src/providers.dart';
 import 'src/theme.dart';
+import 'src/theme_mode.dart';
 import 'src/ui/ident_logo.dart';
 import 'src/ui/login_screen.dart';
 import 'src/ui/streams_screen.dart';
@@ -57,11 +58,14 @@ class _IdentAppState extends ConsumerState<IdentApp> {
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
+    final themeMode = ref.watch(themeModeProvider);
 
     return MaterialApp(
       title: 'IDent Dynamics',
       debugShowCheckedModeBanner: false,
-      theme: buildIdentTheme(),
+      theme: buildIdentTheme(brightness: Brightness.light),
+      darkTheme: buildIdentTheme(brightness: Brightness.dark),
+      themeMode: themeMode,
       home: switch (auth.state) {
         AuthLoading() => const _Splash(),
         AuthSignedOut(:final lastBaseUrl, :final error) => LoginScreen(
@@ -96,6 +100,7 @@ class _Splash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Scaffold(
       body: Center(
         child: LayoutBuilder(
@@ -128,7 +133,7 @@ class _Splash extends StatelessWidget {
                     'Go\nbeyond\nautomation.',
                     textAlign: TextAlign.left,
                     style: TextStyle(
-                      color: IdentColors.textPrimary,
+                      color: palette.textPrimary,
                       fontSize: fontSize,
                       fontWeight: FontWeight.w300,
                       height: 1.0,

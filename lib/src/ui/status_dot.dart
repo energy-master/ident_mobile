@@ -54,7 +54,7 @@ class _StatusDotState extends State<StatusDot> with SingleTickerProviderStateMix
     final allowMotion = !MediaQuery.disableAnimationsOf(context);
     _syncAnimation(allowMotion: allowMotion);
 
-    final colour = IdentColors.forStatus(widget.status);
+    final colour = identColors(context).forStatus(widget.status);
 
     return Semantics(
       label: widget.semanticLabel,

@@ -285,11 +285,12 @@ class _Header extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = identColors(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
-      decoration: const BoxDecoration(
-        color: IdentColors.surface,
-        border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: const Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -299,11 +300,11 @@ class _Header extends ConsumerWidget {
               Expanded(
                 child: Text(
                   aisSpanLabel(vessels, start, end),
-                  style: const TextStyle(
-                    color: IdentColors.textPrimary,
+                  style: TextStyle(
+                    color: palette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ),
@@ -320,8 +321,8 @@ class _Header extends ConsumerWidget {
           ),
           Text(
             aisCountLabel(vessels, history),
-            style: const TextStyle(
-              color: IdentColors.textSecondary,
+            style: TextStyle(
+              color: palette.textSecondary,
               fontSize: 11.5,
             ),
           ),
@@ -332,11 +333,11 @@ class _Header extends ConsumerWidget {
             onRefresh: onRefresh,
           ),
           if (history == AisHistory.live)
-            const Padding(
-              padding: EdgeInsets.only(top: 4),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
               child: Text(
                 'Live: the last hour, refreshed every minute.',
-                style: TextStyle(color: IdentColors.ok, fontSize: 10.5),
+                style: TextStyle(color: palette.ok, fontSize: 10.5),
               ),
             ),
           if (autoWidened)
@@ -345,8 +346,8 @@ class _Header extends ConsumerWidget {
               child: Text(
                 'Widened: a ${formatDuration(length)} recording is shorter '
                 'than one AIS report.',
-                style: const TextStyle(
-                  color: IdentColors.warn,
+                style: TextStyle(
+                  color: palette.warn,
                   fontSize: 10.5,
                 ),
               ),
@@ -373,12 +374,12 @@ class _HistoryChips extends ConsumerWidget {
   static const _labels = {
     AisHistory.recording: 'Recording',
     AisHistory.aroundRecording: '±1 h',
-    AisHistory.all: 'All',
     AisHistory.live: 'Live',
   };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final palette = identColors(context);
     return Wrap(
       spacing: 6,
       runSpacing: 4,
@@ -394,8 +395,8 @@ class _HistoryChips extends ConsumerWidget {
                     // Green reads as "this is running", which is the one thing
                     // that separates this range from the other three.
                     color: history == entry.key
-                        ? IdentColors.shell
-                        : IdentColors.ok,
+                        ? palette.shell
+                        : palette.ok,
                   )
                 : null,
             visualDensity: VisualDensity.compact,
@@ -403,13 +404,13 @@ class _HistoryChips extends ConsumerWidget {
             labelStyle: TextStyle(
               fontSize: 11,
               color: history == entry.key
-                  ? IdentColors.shell
-                  : IdentColors.textSecondary,
+                  ? palette.shell
+                  : palette.textSecondary,
             ),
             selectedColor: entry.key == AisHistory.live
-                ? IdentColors.ok
-                : IdentColors.accent,
-            backgroundColor: IdentColors.surfaceRaised,
+                ? palette.ok
+                : palette.accent,
+            backgroundColor: palette.surfaceRaised,
             side: BorderSide.none,
             showCheckmark: false,
             onSelected: (_) {
@@ -438,20 +439,21 @@ class _NoRecordingAtClock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.map_outlined, size: 44, color: IdentColors.idle),
+            Icon(Icons.map_outlined, size: 44, color: palette.idle),
             const SizedBox(height: 14),
-            const Text(
+            Text(
               'No recording covers the time the app is at.\n'
               'Choose one in Live images and the map shows the vessels '
               'present while it was recorded.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
             const SizedBox(height: 18),
             // The one view that stands without a recording, so it is offered
@@ -459,7 +461,7 @@ class _NoRecordingAtClock extends StatelessWidget {
             // want to make.
             FilledButton.tonalIcon(
               onPressed: onShowLive,
-              icon: const Icon(Icons.circle, size: 10, color: IdentColors.ok),
+              icon: Icon(Icons.circle, size: 10, color: palette.ok),
               label: const Text('Show live traffic'),
             ),
           ],
@@ -477,18 +479,19 @@ class _Error extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, size: 44, color: IdentColors.idle),
+            Icon(Icons.cloud_off, size: 44, color: palette.idle),
             const SizedBox(height: 14),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
             const SizedBox(height: 18),
             FilledButton.tonal(onPressed: onRetry, child: const Text('Try again')),

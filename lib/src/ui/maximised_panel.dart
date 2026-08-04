@@ -95,7 +95,7 @@ class _MaximisedPanelScreenState extends State<MaximisedPanelScreen> {
     };
 
     return Scaffold(
-      backgroundColor: IdentColors.shell,
+      backgroundColor: identColors(context).shell,
       body: SafeArea(
         child: Stack(
           children: [
@@ -152,7 +152,7 @@ class _PanelDock extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         decoration: BoxDecoration(
-          color: IdentColors.surface.withValues(alpha: 0.95),
+          color: identColors(context).surface.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(28),
           border: Border.all(color: const Color(0x2AFFFFFF)),
           boxShadow: const [
@@ -204,6 +204,7 @@ class _DockButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Tooltip(
       message: tooltip,
       child: InkResponse(
@@ -214,13 +215,13 @@ class _DockButton extends StatelessWidget {
           height: 44,
           margin: const EdgeInsets.symmetric(horizontal: 2),
           decoration: BoxDecoration(
-            color: selected ? IdentColors.accent : Colors.transparent,
+            color: selected ? palette.accent : Colors.transparent,
             shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
             size: 20,
-            color: selected ? IdentColors.shell : IdentColors.textSecondary,
+            color: selected ? palette.shell : palette.textSecondary,
           ),
         ),
       ),
@@ -319,7 +320,7 @@ class _AisFileStrip extends ConsumerWidget {
       activeIndex: activeIndex,
       vertical: vertical,
       anchor: FileStripAnchor.end,
-      background: IdentColors.surface.withValues(alpha: 0.92),
+      background: identColors(context).surface.withValues(alpha: 0.92),
       onTap: (i) {
         // Tap pins the application clock. No popup, no drawer — the user asked
         // for the recording behind that thumbnail, so put the app there. The

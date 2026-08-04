@@ -22,6 +22,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../api_client.dart';
 import '../models.dart';
@@ -30,6 +31,7 @@ import '../spectrogram_geometry.dart';
 import '../stream_clock.dart';
 import '../theme.dart';
 import '../time_format.dart';
+import 'date_heatmap_picker.dart';
 import 'file_strip.dart';
 
 /// Where the viewer should sit after its file list is replaced.
@@ -312,30 +314,47 @@ class _FileViewerState extends ConsumerState<FileViewer> {
     final newest = files.first.startTime;
     final oldest = files.last.startTime;
 
-    final date = await showDatePicker(
+    // Recordings per local day — feeds the picker's heatmap shading and also
+    // decides which days are tappable (empty ones aren't).
+    final counts = <DateTime, int>{};
+    for (final f in files) {
+      final local = f.startTime.toLocal();
+      final day = DateTime(local.year, local.month, local.day);
+      counts[day] = (counts[day] ?? 0) + 1;
+    }
+
+    final date = await showDateHeatmapPicker(
       context: context,
+      counts: counts,
       initialDate: newest.toLocal(),
-      firstDate: oldest.toLocal().subtract(const Duration(days: 1)),
-      lastDate: newest.toLocal().add(const Duration(days: 1)),
-      helpText: 'Jump to date',
+      firstDate: oldest.toLocal(),
+      lastDate: newest.toLocal(),
     );
     if (date == null || !mounted) return;
 
-    final time = await showTimePicker(
+    // Recordings per local hour on the chosen day. Scoped to this day so the
+    // picker can shade against the day's own peak, not the stream's.
+    final hourCounts = <int, int>{};
+    for (final f in files) {
+      final local = f.startTime.toLocal();
+      if (local.year != date.year ||
+          local.month != date.month ||
+          local.day != date.day) {
+        continue;
+      }
+      hourCounts[local.hour] = (hourCounts[local.hour] ?? 0) + 1;
+    }
+
+    final hour = await showHourHeatmapPicker(
       context: context,
-      initialTime: TimeOfDay.fromDateTime(newest.toLocal()),
-      helpText: 'Jump to time',
+      counts: hourCounts,
+      dayLabel: DateFormat('EEE d MMM yyyy').format(date),
+      initialHour: newest.toLocal().hour,
     );
     if (!mounted) return;
 
     // Times are chosen in the user's local zone; recordings are stamped UTC.
-    final target = DateTime(
-      date.year,
-      date.month,
-      date.day,
-      time?.hour ?? 0,
-      time?.minute ?? 0,
-    ).toUtc();
+    final target = DateTime(date.year, date.month, date.day, hour ?? 0).toUtc();
 
     var bestIndex = 0;
     var bestDelta = const Duration(days: 36500);
@@ -502,11 +521,12 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
-      decoration: const BoxDecoration(
-        color: IdentColors.surface,
-        border: Border(bottom: BorderSide(color: Color(0x1FFFFFFF))),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(bottom: BorderSide(color: palette.hairline)),
       ),
       child: Row(
         children: [
@@ -516,16 +536,16 @@ class _Header extends StatelessWidget {
               children: [
                 Text(
                   span,
-                  style: const TextStyle(
-                    color: IdentColors.textPrimary,
+                  style: TextStyle(
+                    color: palette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 Text(
                   subtitle,
-                  style: const TextStyle(color: IdentColors.textSecondary, fontSize: 11.5),
+                  style: TextStyle(color: palette.textSecondary, fontSize: 11.5),
                 ),
               ],
             ),
@@ -539,14 +559,14 @@ class _Header extends StatelessWidget {
           IconButton(
             icon: Icon(isFavourite ? Icons.star : Icons.star_border),
             iconSize: 20,
-            color: isFavourite ? IdentColors.warn : null,
+            color: isFavourite ? palette.warn : null,
             tooltip: isFavourite ? 'Remove from favourites' : 'Add to favourites',
             onPressed: onToggleFavourite,
           ),
           IconButton(
             icon: const Icon(Icons.list_alt),
             iconSize: 20,
-            color: showDecisions ? IdentColors.accent : null,
+            color: showDecisions ? palette.accent : null,
             tooltip: showDecisions ? 'Hide detections' : 'Show detections',
             onPressed: onToggleDecisions,
           ),
@@ -728,6 +748,7 @@ class _Unavailable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       color: const Color(0xFF11151D),
       alignment: Alignment.center,
@@ -735,12 +756,12 @@ class _Unavailable extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.hourglass_empty, size: 26, color: IdentColors.idle),
+          Icon(Icons.hourglass_empty, size: 26, color: palette.idle),
           const SizedBox(height: 8),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: IdentColors.idle, fontSize: 12),
+            style: TextStyle(color: palette.idle, fontSize: 12),
           ),
         ],
       ),
@@ -758,20 +779,21 @@ class _DecisionsPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(fileDecisionsProvider((folder: folder, file: file.name)));
+    final palette = identColors(context);
 
     return Container(
-      decoration: const BoxDecoration(
-        color: IdentColors.surface,
-        border: Border(top: BorderSide(color: Color(0x1FFFFFFF))),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        border: Border(top: BorderSide(color: palette.hairline)),
       ),
       child: switch (async) {
-        AsyncData(:final value) when value.decisions.isEmpty => const Center(
+        AsyncData(:final value) when value.decisions.isEmpty => Center(
             child: Padding(
-              padding: EdgeInsets.all(20),
+              padding: const EdgeInsets.all(20),
               child: Text(
                 'No detections recorded for this recording.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: IdentColors.textSecondary, fontSize: 12.5),
+                style: TextStyle(color: palette.textSecondary, fontSize: 12.5),
               ),
             ),
           ),
@@ -784,8 +806,8 @@ class _DecisionsPanel extends ConsumerWidget {
                   value.truncated
                       ? 'DETECTIONS · showing ${value.decisions.length} of ${value.total}'
                       : 'DETECTIONS · ${value.total}',
-                  style: const TextStyle(
-                    color: IdentColors.textSecondary,
+                  style: TextStyle(
+                    color: palette.textSecondary,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
@@ -806,7 +828,7 @@ class _DecisionsPanel extends ConsumerWidget {
               child: Text(
                 '$error',
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: IdentColors.textSecondary, fontSize: 12),
+                style: TextStyle(color: palette.textSecondary, fontSize: 12),
               ),
             ),
           ),
@@ -829,6 +851,7 @@ class _DecisionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final score = decision.score;
     // Judge confidence against the model's own threshold when it has one — an
     // absolute scale would misread models tuned differently.
@@ -844,7 +867,7 @@ class _DecisionRow extends StatelessWidget {
             width: 3,
             height: 30,
             decoration: BoxDecoration(
-              color: strong ? IdentColors.ok : IdentColors.warn,
+              color: strong ? palette.ok : palette.warn,
               borderRadius: BorderRadius.circular(2),
             ),
           ),
@@ -855,11 +878,11 @@ class _DecisionRow extends StatelessWidget {
               children: [
                 Text(
                   '${decision.tmin.toStringAsFixed(1)}s – ${decision.tmax.toStringAsFixed(1)}s',
-                  style: const TextStyle(
-                    color: IdentColors.textPrimary,
+                  style: TextStyle(
+                    color: palette.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    fontFeatures: [FontFeature.tabularFigures()],
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
                 Text(
@@ -868,7 +891,7 @@ class _DecisionRow extends StatelessWidget {
                     if (decision.target != null) decision.target!,
                     if (decision.isSidecar) 'sidecar',
                   ].join(' · '),
-                  style: const TextStyle(color: IdentColors.textSecondary, fontSize: 11.5),
+                  style: TextStyle(color: palette.textSecondary, fontSize: 11.5),
                 ),
               ],
             ),
@@ -877,7 +900,7 @@ class _DecisionRow extends StatelessWidget {
             Text(
               score.toStringAsFixed(2),
               style: TextStyle(
-                color: strong ? IdentColors.ok : IdentColors.textSecondary,
+                color: strong ? palette.ok : palette.textSecondary,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
                 fontFeatures: const [FontFeature.tabularFigures()],

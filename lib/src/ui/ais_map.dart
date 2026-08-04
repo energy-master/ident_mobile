@@ -120,6 +120,7 @@ List<Polyline<int>> buildTrackSegments(
 /// widening the window quietly discards the whole point of the page.
 List<CircleMarker<AisHit>> buildFixDots(
   List<VesselTrack> tracks, {
+  required Color borderColor,
   double radius = _fixRadius,
   bool Function(TrackPoint)? emphasise,
 }) {
@@ -134,7 +135,7 @@ List<CircleMarker<AisHit>> buildFixDots(
           radius: radius,
           color: t.colour.withValues(alpha: 0.75),
           borderStrokeWidth: inSpan ? 1.5 : 0,
-          borderColor: IdentColors.textPrimary,
+          borderColor: borderColor,
           hitValue: (mmsi: t.mmsi, fixIndex: i),
         ),
       );
@@ -374,13 +375,14 @@ class _AisMapState extends ConsumerState<AisMap> {
   }
 
   /// Rebuild only the layers whose inputs actually moved.
-  void _refreshLayers(AisView view) {
+  void _refreshLayers(AisView view, {required Color fixBorderColor}) {
     final sensor = _sensorPoint;
     final signature = Object.hash(
       identityHashCode(_tracks),
       view.isolatedMmsi,
       Object.hashAllUnordered(view.hiddenMmsi),
       sensor,
+      fixBorderColor,
     );
 
     if (signature != _baseSignature) {
@@ -393,7 +395,11 @@ class _AisMapState extends ConsumerState<AisMap> {
         simplificationTolerance: 0,
       );
       _dotLayer = CircleLayer(
-        circles: buildFixDots(visible, emphasise: _inRecording),
+        circles: buildFixDots(
+          visible,
+          borderColor: fixBorderColor,
+          emphasise: _inRecording,
+        ),
       );
       _ringLayer = sensor == null
           ? null
@@ -417,8 +423,9 @@ class _AisMapState extends ConsumerState<AisMap> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final view = ref.watch(aisViewProvider(widget.stream));
-    _refreshLayers(view);
+    _refreshLayers(view, fixBorderColor: palette.textPrimary);
 
     final sensor = _sensorPoint;
     final selected = view.selectedMmsi == null
@@ -435,7 +442,7 @@ class _AisMapState extends ConsumerState<AisMap> {
             initialZoom: 11,
             // The default is a light grey that flashes between tiles on this
             // app's near-black shell.
-            backgroundColor: IdentColors.shell,
+            backgroundColor: palette.shell,
             // Keeps projections alive while the dashboard's PageView has this
             // window off screen.
             keepAlive: true,
@@ -494,6 +501,7 @@ class _AisMapState extends ConsumerState<AisMap> {
               CircleLayer(
                 circles: buildFixDots(
                   [selected],
+                  borderColor: palette.textPrimary,
                   radius: _highlightFixRadius,
                   emphasise: _inRecording,
                 ),
@@ -573,16 +581,17 @@ class _TwoFingerHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       margin: const EdgeInsets.only(top: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: IdentColors.shell.withValues(alpha: 0.78),
+        color: palette.shell.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Text(
+      child: Text(
         'Two fingers to move',
-        style: TextStyle(color: IdentColors.textSecondary, fontSize: 10.5),
+        style: TextStyle(color: palette.textSecondary, fontSize: 10.5),
       ),
     );
   }
@@ -603,14 +612,15 @@ class MapButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       child: Material(
-        color: IdentColors.shell.withValues(alpha: 0.78),
+        color: palette.shell.withValues(alpha: 0.78),
         borderRadius: BorderRadius.circular(6),
         child: IconButton(
           icon: Icon(icon, size: 18),
-          color: IdentColors.textPrimary,
+          color: palette.textPrimary,
           tooltip: tooltip,
           constraints: const BoxConstraints.tightFor(width: 40, height: 40),
           padding: EdgeInsets.zero,
@@ -635,9 +645,10 @@ class _VesselsChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     final label = count == total ? '$total vessels' : '$count of $total';
     return Material(
-      color: IdentColors.shell.withValues(alpha: 0.78),
+      color: palette.shell.withValues(alpha: 0.78),
       borderRadius: BorderRadius.circular(6),
       child: InkWell(
         onTap: onTap,
@@ -649,15 +660,15 @@ class _VesselsChip extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
-                  color: IdentColors.textPrimary,
+                style: TextStyle(
+                  color: palette.textPrimary,
                   fontSize: 11.5,
                 ),
               ),
-              const Icon(
+              Icon(
                 Icons.expand_more,
                 size: 16,
-                color: IdentColors.textSecondary,
+                color: palette.textSecondary,
               ),
             ],
           ),
@@ -708,13 +719,13 @@ class _SensorMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Tooltip(
+    return Tooltip(
       message: 'Hydrophone',
       child: Icon(
         Icons.graphic_eq,
         size: 22,
-        color: IdentColors.ok,
-        shadows: [Shadow(color: Colors.black87, blurRadius: 4)],
+        color: identColors(context).ok,
+        shadows: const [Shadow(color: Colors.black87, blurRadius: 4)],
       ),
     );
   }

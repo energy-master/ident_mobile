@@ -285,7 +285,7 @@ class _ModeSelector extends StatelessWidget {
                   // moves the app off the newest data puts it out, wherever the
                   // strip happens to be filtered.
                   selected: isLive && mode == FeedMode.live,
-                  selectedColour: IdentColors.ok,
+                  selectedColour: identColors(context).ok,
                   tooltip: isLive
                       ? 'Live — following the newest recording'
                       : 'Back to live',
@@ -331,7 +331,7 @@ class _FilterChip extends StatelessWidget {
     required this.selected,
     required this.tooltip,
     required this.onTap,
-    this.selectedColour = IdentColors.accent,
+    this.selectedColour,
   });
 
   final String label;
@@ -340,10 +340,12 @@ class _FilterChip extends StatelessWidget {
   final bool selected;
   final String tooltip;
   final VoidCallback onTap;
-  final Color selectedColour;
+  final Color? selectedColour;
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
+    final effectiveSelected = selectedColour ?? palette.accent;
     return Tooltip(
       message: tooltip,
       child: ChoiceChip(
@@ -355,16 +357,16 @@ class _FilterChip extends StatelessWidget {
           // Against the chip's own fill once selected, and in its own right
           // when not — the green dot has to keep reading as "running" from
           // either side.
-          color: selected ? IdentColors.shell : selectedColour,
+          color: selected ? palette.shell : effectiveSelected,
         ),
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         labelStyle: TextStyle(
           fontSize: 11,
-          color: selected ? IdentColors.shell : IdentColors.textSecondary,
+          color: selected ? palette.shell : palette.textSecondary,
         ),
-        selectedColor: selectedColour,
-        backgroundColor: IdentColors.surfaceRaised,
+        selectedColor: effectiveSelected,
+        backgroundColor: palette.surfaceRaised,
         side: BorderSide.none,
         showCheckmark: false,
         // Always fires, selected or not: tapping Live while it is already lit
@@ -380,18 +382,19 @@ class _Empty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final palette = identColors(context);
+    return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.image_outlined, size: 44, color: IdentColors.idle),
-            SizedBox(height: 14),
+            Icon(Icons.image_outlined, size: 44, color: palette.idle),
+            const SizedBox(height: 14),
             Text(
               'No recordings in this stream folder yet.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
           ],
         ),
@@ -421,18 +424,19 @@ class _FilterEmpty extends StatelessWidget {
       _ => (Icons.image_outlined, 'Nothing to show.'),
     };
 
+    final palette = identColors(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 44, color: IdentColors.idle),
+            Icon(icon, size: 44, color: palette.idle),
             const SizedBox(height: 14),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
           ],
         ),
@@ -449,18 +453,19 @@ class _Error extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = identColors(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off, size: 44, color: IdentColors.idle),
+            Icon(Icons.cloud_off, size: 44, color: palette.idle),
             const SizedBox(height: 14),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: IdentColors.textSecondary),
+              style: TextStyle(color: palette.textSecondary),
             ),
             const SizedBox(height: 18),
             FilledButton.tonal(onPressed: onRetry, child: const Text('Try again')),

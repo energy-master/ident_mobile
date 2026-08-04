@@ -6,6 +6,7 @@
 /// got the right colour. Same approach as `file_viewer_test.dart`.
 library;
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ident_mobile/src/ais_map_geometry.dart';
 import 'package:ident_mobile/src/models.dart';
@@ -61,9 +62,12 @@ void main() {
 
   group('buildFixDots', () {
     test('a dot per fix, each carrying its own index', () {
-      final dots = buildFixDots([
-        track(1, [p(0, 0), p(0, 1), p(0, 2)]),
-      ]);
+      final dots = buildFixDots(
+        [
+          track(1, [p(0, 0), p(0, 1), p(0, 2)]),
+        ],
+        borderColor: Colors.white,
+      );
       expect(dots, hasLength(3));
       expect(dots.map((d) => d.hitValue), [
         (mmsi: 1, fixIndex: 0),
@@ -73,9 +77,12 @@ void main() {
     });
 
     test('dots wear the vessel colour, not the age gradient', () {
-      final dots = buildFixDots([
-        track(1, [p(0, 0), p(0, 1)], colourIndex: 3),
-      ]);
+      final dots = buildFixDots(
+        [
+          track(1, [p(0, 0), p(0, 1)], colourIndex: 3),
+        ],
+        borderColor: Colors.white,
+      );
       expect(dots.first.color.r, vesselColour(3).r);
     });
 
@@ -86,6 +93,7 @@ void main() {
         [
           track(1, [p(0, 0, t: 10), p(0, 1, t: 500)]),
         ],
+        borderColor: Colors.white,
         emphasise: (fix) => fix.t >= 100,
       );
       expect(dots.first.borderStrokeWidth, 0);

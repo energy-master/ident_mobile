@@ -214,6 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final notice = widget.notice;
     final recents = ref.watch(recentSignInsProvider);
     final showServer = _showServer(recents);
+    final palette = identColors(context);
 
     return Scaffold(
       body: SafeArea(
@@ -242,15 +243,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       // larger.
                       const Center(child: IdentLockup(scale: 2.4)),
                       const SizedBox(height: 20),
-                      const Text(
+                      Text(
                         'Sign in to monitor your streams',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: IdentColors.textSecondary),
+                        style: TextStyle(color: palette.textSecondary),
                       ),
                       const SizedBox(height: 28),
 
                       if (notice != null) ...[
-                        _Banner(message: notice, colour: IdentColors.warn),
+                        _Banner(message: notice, colour: palette.warn),
                         const SizedBox(height: 16),
                       ],
 
@@ -327,7 +328,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                       if (_error != null) ...[
                         const SizedBox(height: 16),
-                        _Banner(message: _error!, colour: IdentColors.error),
+                        _Banner(message: _error!, colour: palette.error),
                       ],
 
                       const SizedBox(height: 24),
@@ -417,7 +418,7 @@ class _PrivacyLink extends StatelessWidget {
         } catch (_) {}
       },
       style: TextButton.styleFrom(
-        foregroundColor: IdentColors.textSecondary,
+        foregroundColor: identColors(context).textSecondary,
         textStyle: const TextStyle(fontSize: 12),
       ),
       child: const Text('Privacy policy'),
