@@ -83,71 +83,39 @@ class _IdentAppState extends ConsumerState<IdentApp> {
 
 /// First frame the app draws while auth is being restored.
 ///
-/// The lockup sits on top of the product's tagline, "Go / beyond /
-/// automation.", one word per line and left-justified — the mark and the
-/// promise as one composition, sized to earn most of the screen rather than
-/// float as a small badge in the middle. A quiet spinner underneath does
-/// double duty as the load indicator; nothing else moves.
+/// The lockup sits centred with a quiet spinner underneath as the load
+/// indicator; nothing else moves.
 class _Splash extends StatelessWidget {
   const _Splash();
 
-  /// Fraction of the shortest screen side the splash block should occupy.
+  /// Fraction of the shortest screen side the lockup should occupy.
   ///
   /// Keyed to the short side rather than to width or height alone so the
   /// composition holds together on a phone, an iPad in portrait and an iPad
   /// in landscape without a per-orientation layout.
-  static const _fillFraction = 0.70;
+  static const _fillFraction = 0.45;
 
   @override
   Widget build(BuildContext context) {
-    final palette = identColors(context);
     return Scaffold(
       body: Center(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            // Size the composition to a square [_fillFraction] of the
-            // shortest side, then let it grow with the taller axis if there
-            // is room. Bounded either way, so the tagline stays legible on a
-            // narrow phone and stays proportioned on a wide iPad.
             final short = constraints.biggest.shortestSide;
             final side = short * _fillFraction;
-
-            // Three lines of tagline plus the lockup: allot roughly a fifth of
-            // the block's height to each line, and a quarter to the lockup and
-            // the gap beneath it. Font size follows line height with a small
-            // margin for descenders.
-            final lineHeight = side * 0.22;
-            final fontSize = lineHeight * 0.95;
             final lockupScale = side / 90;
 
-            return SizedBox(
-              width: side,
-              height: side,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  IdentLockup(scale: lockupScale),
-                  SizedBox(height: side * 0.08),
-                  Text(
-                    'Go\nbeyond\nautomation.',
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      color: palette.textPrimary,
-                      fontSize: fontSize,
-                      fontWeight: FontWeight.w300,
-                      height: 1.0,
-                      letterSpacing: -fontSize * 0.02,
-                    ),
-                  ),
-                  SizedBox(height: side * 0.08),
-                  const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ],
-              ),
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IdentLockup(scale: lockupScale),
+                SizedBox(height: side * 0.15),
+                const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ],
             );
           },
         ),
